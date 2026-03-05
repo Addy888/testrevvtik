@@ -16,11 +16,20 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <DashboardSidebar />
-      <main className="pl-64">
-        <div className="p-8">{children}</div>
+    <div className="min-h-screen bg-background flex">
+
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:block w-64 border-r bg-background">
+        <DashboardSidebar />
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 w-full overflow-x-hidden">
+        <div className="p-4 md:p-8">
+          {children}
+        </div>
       </main>
+
     </div>
   )
 }
