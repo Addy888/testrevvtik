@@ -351,7 +351,7 @@ export default async function DashboardPage() {
           ) : (
             <div className="text-center py-8">
               <p className="text-muted-foreground mb-4">
-                No sessions yet. Start your first session!
+                You can start a practice session to see your previous activity by clicking the button below!
               </p>
               <Button asChild>
                 <Link href="/dashboard/ai-agent">
