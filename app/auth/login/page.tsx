@@ -44,10 +44,12 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 glow-cyan-sm">
-              <Zap className="h-6 w-6 text-primary" />
-            </div>
-            <span className="text-2xl font-bold">RevvTik</span>
+            <img
+              src="/RivvTik.jpeg"
+              alt="RevvTik Logo"
+              className="h-8 w-8 object-contain"
+            />
+            <span className="text-xl font-bold">RevvTik</span>
           </Link>
         </div>
         <Card className="border-border/50 bg-card">
