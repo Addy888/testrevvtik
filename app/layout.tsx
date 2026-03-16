@@ -7,9 +7,9 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'RivvTik Sales Ai ',
+  title: 'RevvTik Sales Ai ',
   description: 'Fast and accurate sales insights with RivvTik Sales Ai. Analyze conversations, extract key information, and boost your sales performance effortlessly.',
-  generator: 'RivvTik IT Development',
+  generator: 'RevvTik IT Development',
   icons: {
     icon: [
       {
