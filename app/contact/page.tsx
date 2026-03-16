@@ -67,7 +67,7 @@ export default function ContactPage() {
                   </div>
                   <div>
                     <h3 className="font-semibold">Phone</h3>
-                    <p className="text-muted-foreground">+1 (555) 123-4567</p>
+                    <p className="text-muted-foreground">----</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
@@ -76,7 +76,7 @@ export default function ContactPage() {
                   </div>
                   <div>
                     <h3 className="font-semibold">Location</h3>
-                    <p className="text-muted-foreground">San Francisco, CA, USA</p>
+                    <p className="text-muted-foreground">128 City Road London ECIV 2NX</p>
                   </div>
                 </div>
               </div>

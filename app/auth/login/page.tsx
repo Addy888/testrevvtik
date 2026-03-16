@@ -164,7 +164,7 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2">
             <img
-              src="/RivvTik.jpeg"
+              src="/Revvtik pic.jpeg"
               alt="RevvTik Logo"
               className="h-8 w-8 object-contain"
             />

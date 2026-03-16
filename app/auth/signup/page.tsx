@@ -158,13 +158,13 @@
 
 
 
-
 "use client"
 
 import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import Image from "next/image"   // ✅ ADDED
 import { Zap, Eye, EyeOff } from "lucide-react"
 
 import { createClient } from "@/lib/supabase/client"
@@ -178,8 +178,8 @@ export default function SignUpPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)          // ✅ ADDED
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false) // ✅ ADDED
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -231,9 +231,16 @@ export default function SignUpPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <Zap className="h-6 w-6 text-primary" />
-            </div>
+            
+            {/* ✅ NEW LOGO ADDED */}
+            <Image
+              src="\Revvtik pic.jpeg"
+              alt="RevvTik"
+              width={40}
+              height={40}
+              className="rounded-lg"
+            />
+
             <span className="text-2xl font-bold">RevvTik</span>
           </Link>
         </div>
@@ -270,7 +277,7 @@ export default function SignUpPage() {
                 />
               </div>
 
-              {/* ✅ PASSWORD */}
+              {/* PASSWORD */}
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
@@ -291,7 +298,7 @@ export default function SignUpPage() {
                 </div>
               </div>
 
-              {/* ✅ CONFIRM PASSWORD */}
+              {/* CONFIRM PASSWORD */}
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
                 <div className="relative">

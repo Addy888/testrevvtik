@@ -21,11 +21,11 @@ export const metadata: Metadata = {
         media: '(prefers-color-scheme: dark)',
       },
       {
-        url: '/RivvTik.jpeg',
+        url: '/Revvtik pic.jpeg',
         type: 'image/svg+xml',
       },
     ],
-    apple: '/RivvTik.jpeg',
+    apple: '/Revvtik pic.jpeg',
   },
 }
 
