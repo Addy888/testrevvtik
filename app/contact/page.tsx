@@ -58,7 +58,7 @@ export default function ContactPage() {
                   </div>
                   <div>
                     <h3 className="font-semibold">Email</h3>
-                    <p className="text-muted-foreground">support@revvtik.com</p>
+                    <p className="text-muted-foreground">revvtikai@gmail.com</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
