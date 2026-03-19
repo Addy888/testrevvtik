@@ -1837,6 +1837,661 @@
 
 
 
+// "use client"
+
+// import { useState, useRef, useEffect } from "react"
+// import { Button } from "@/components/ui/button"
+// import { Input } from "@/components/ui/input"
+// import { Card } from "@/components/ui/card"
+// import { ScrollArea } from "@/components/ui/scroll-area"
+// import { Send, Bot, User, Loader2, Paperclip } from "lucide-react"
+// import { cn } from "@/lib/utils"
+
+// type Message = {
+//   id: string
+//   role: "user" | "assistant"
+//   text: string
+// }
+
+// type Session = {
+//   id: string
+//   title: string
+// }
+
+// function SessionRow({
+//   session,
+//   isActive,
+//   onSelect,
+// }: {
+//   session: Session
+//   isActive: boolean
+//   onSelect: () => void
+// }) {
+//   return (
+//     <div
+//       onClick={onSelect}
+//       className={cn(
+//         "cursor-pointer rounded-md px-3 py-2 text-sm hover:bg-muted",
+//         isActive && "bg-muted font-medium"
+//       )}
+//     >
+//       {session.title || "New Chat"}
+//     </div>
+//   )
+// }
+
+// const QUICK_PROMPTS = [
+//   "Let's practice a cold call opening",
+//   "Help me handle the 'too expensive' objection",
+//   "Simulate a discovery call with a prospect",
+//   "Practice closing techniques with me",
+// ]
+
+// export function ChatInterface({
+//   initialSessions,
+//   initialSessionId,
+// }: {
+//   initialSessions: Session[]
+//   initialSessionId?: string | null
+// }) {
+//   const [input, setInput] = useState("")
+//   const [messages, setMessages] = useState<Message[]>([])
+//   const [loading, setLoading] = useState(false)
+//   const [sessionId, setSessionId] = useState<string | null>(null)
+//   const [sessions, setSessions] = useState<Session[]>(initialSessions)
+
+//   const scrollRef = useRef<HTMLDivElement | null>(null)
+//   const fileRef = useRef<HTMLInputElement | null>(null)
+
+//   const handleFileUpload = async (file: File) => {
+//     const userMsg: Message = {
+//       id: crypto.randomUUID(),
+//       role: "user",
+//       text: `📎 Uploaded: ${file.name}`,
+//     }
+
+//     setMessages((prev) => [...prev, userMsg])
+//     setLoading(true)
+
+//     try {
+//       const formData = new FormData()
+//       formData.append("file", file)
+
+//       const res = await fetch("/api/upload", {
+//         method: "POST",
+//         body: formData,
+//       })
+
+//       const data = await res.json()
+
+//       const aiMsg: Message = {
+//         id: crypto.randomUUID(),
+//         role: "assistant",
+//         text: data?.text || "✅ File received",
+//       }
+
+//       setMessages((prev) => [...prev, aiMsg])
+//     } catch {
+//       setMessages((prev) => [
+//         ...prev,
+//         {
+//           id: crypto.randomUUID(),
+//           role: "assistant",
+//           text: "❌ Upload failed",
+//         },
+//       ])
+//     } finally {
+//       setLoading(false)
+//     }
+//   }
+
+//   useEffect(() => {
+//     scrollRef.current?.scrollTo({
+//       top: scrollRef.current.scrollHeight,
+//       behavior: "smooth",
+//     })
+//   }, [messages])
+
+//   /* ✅ FIXED EFFECT (dependency crash fix) */
+//   useEffect(() => {
+//     const restoreSession = async () => {
+//       if (initialSessionId) {
+//         await loadSession(initialSessionId)
+//         return
+//       }
+
+//       const saved = localStorage.getItem("activeSession")
+//       if (!saved) return
+
+//       const exists = initialSessions?.find((s) => s.id === saved)
+
+//       if (exists) {
+//         await loadSession(saved)
+//       } else {
+//         localStorage.removeItem("activeSession")
+//       }
+//     }
+
+//     restoreSession()
+
+//     // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, [])
+
+//   const loadSession = async (id: string) => {
+//     try {
+//       setSessionId(id)
+//       localStorage.setItem("activeSession", id)
+//       setMessages([])
+
+//       const res = await fetch(`/api/chat/history?sessionId=${id}`)
+//       const data = await res.json()
+
+//       setMessages(
+//         data.map((m: any) => ({
+//           id: m.id,
+//           role: m.role,
+//           text: m.content,
+//         }))
+//       )
+//     } catch (e) {
+//       console.log(e)
+//     }
+//   }
+
+//   const sendMessage = async (text: string) => {
+//     if (!text.trim() || loading) return
+
+//     const userMsg: Message = {
+//       id: crypto.randomUUID(),
+//       role: "user",
+//       text,
+//     }
+
+//     const updated = [...messages, userMsg]
+//     setMessages(updated)
+//     setInput("")
+//     setLoading(true)
+
+//     try {
+//       const res = await fetch("/api/chat", {
+//         method: "POST",
+//         headers: { "Content-Type": "application/json" },
+//         body: JSON.stringify({
+//           messages: updated.map((m) => ({
+//             role: m.role,
+//             content: m.text,
+//           })),
+//           sessionId,
+//         }),
+//       })
+
+//       const data = await res.json()
+
+//       if (!sessionId && data.sessionId) {
+//         setSessionId(data.sessionId)
+//         localStorage.setItem("activeSession", data.sessionId)
+
+//         setSessions((prev) => [
+//           { id: data.sessionId, title: text.slice(0, 40) },
+//           ...prev,
+//         ])
+//       }
+
+//       setMessages((prev) => [
+//         ...prev,
+//         {
+//           id: crypto.randomUUID(),
+//           role: "assistant",
+//           text: data.text,
+//         },
+//       ])
+//     } catch (e) {
+//       console.log(e)
+//     } finally {
+//       setLoading(false)
+//     }
+//   }
+
+//   const startNewChat = () => {
+//     setSessionId(null)
+//     setMessages([])
+//     localStorage.removeItem("activeSession")
+//   }
+
+//   return (
+//     <div className="flex flex-col md:flex-row h-[calc(100vh-12rem)] gap-4">
+//       <div className="w-full md:w-64 border rounded-lg p-3 space-y-2">
+//         <Button className="w-full" onClick={startNewChat}>
+//           + New Chat
+//         </Button>
+
+//         <div className="mt-4 space-y-1">
+//           {sessions.map((s) => (
+//             <SessionRow
+//               key={s.id}
+//               session={s}
+//               isActive={s.id === sessionId}
+//               onSelect={() => loadSession(s.id)}
+//             />
+//           ))}
+//         </div>
+//       </div>
+
+//       <Card className="flex flex-1 flex-col overflow-hidden">
+//         <ScrollArea className="flex-1 overflow-y-auto p-4">
+//           <div ref={scrollRef}>
+//             {messages.length === 0 ? (
+//               <div className="grid gap-2">
+//                 {QUICK_PROMPTS.map((p) => (
+//                   <Button key={p} variant="outline" onClick={() => sendMessage(p)}>
+//                     {p}
+//                   </Button>
+//                 ))}
+//               </div>
+//             ) : (
+//               <div className="space-y-4">
+//                 {messages.map((m) => (
+//                   <div
+//                     key={m.id}
+//                     className={cn(
+//                       "flex gap-2 w-full",
+//                       m.role === "user" ? "justify-end" : "justify-start"
+//                     )}
+//                   >
+//                     {m.role === "assistant" && <Bot />}
+//                     <div className="max-w-[70%] rounded-2xl bg-muted px-4 py-3 break-words">
+//                       <p className="whitespace-pre-wrap text-sm">{m.text}</p>
+//                     </div>
+//                     {m.role === "user" && <User />}
+//                   </div>
+//                 ))}
+
+//                 {loading && (
+//                   <div className="flex gap-2">
+//                     <Bot />
+//                     <Loader2 className="animate-spin" />
+//                   </div>
+//                 )}
+//               </div>
+//             )}
+//           </div>
+//         </ScrollArea>
+
+//         <form
+//           onSubmit={(e) => {
+//             e.preventDefault()
+//             sendMessage(input)
+//           }}
+//           className="flex w-full gap-2 border-t p-4"
+//         >
+//           <button type="button" onClick={() => fileRef.current?.click()}>
+//             <Paperclip size={18} />
+//           </button>
+
+//           <input
+//             type="file"
+//             ref={fileRef}
+//             className="hidden"
+//             onChange={(e) => {
+//               if (e.target.files?.[0]) handleFileUpload(e.target.files[0])
+//             }}
+//           />
+
+//           <Input
+//             className="flex-1"
+//             value={input}
+//             onChange={(e) => setInput(e.target.value)}
+//             placeholder="Type your message..."
+//           />
+
+//           <Button type="submit" disabled={loading}>
+//             <Send />
+//           </Button>
+//         </form>
+//       </Card>
+//     </div>
+//   )
+// }
+
+
+
+
+// "use client"
+
+// import { useState, useRef, useEffect } from "react"
+// import { Button } from "@/components/ui/button"
+// import { Input } from "@/components/ui/input"
+// import { Card } from "@/components/ui/card"
+// import { ScrollArea } from "@/components/ui/scroll-area"
+// import { Send, Bot, User, Loader2, Paperclip } from "lucide-react"
+// import { cn } from "@/lib/utils"
+
+// type Message = {
+//   id: string
+//   role: "user" | "assistant"
+//   text: string
+// }
+
+// type Session = {
+//   id: string
+//   title: string
+// }
+
+// function SessionRow({
+//   session,
+//   isActive,
+//   onSelect,
+// }: {
+//   session: Session
+//   isActive: boolean
+//   onSelect: () => void
+// }) {
+//   return (
+//     <div
+//       onClick={onSelect}
+//       className={cn(
+//         "cursor-pointer rounded-md px-3 py-2 text-sm hover:bg-muted",
+//         isActive && "bg-muted font-medium"
+//       )}
+//     >
+//       {session.title || "New Chat"}
+//     </div>
+//   )
+// }
+
+// const QUICK_PROMPTS = [
+//   "Let's practice a cold call opening",
+//   "Help me handle the 'too expensive' objection",
+//   "Simulate a discovery call with a prospect",
+//   "Practice closing techniques with me",
+// ]
+
+// export function ChatInterface({
+//   initialSessions,
+//   initialSessionId,
+// }: {
+//   initialSessions: Session[]
+//   initialSessionId?: string | null
+// }) {
+//   const [input, setInput] = useState("")
+//   const [messages, setMessages] = useState<Message[]>([])
+//   const [loading, setLoading] = useState(false)
+//   const [sessionId, setSessionId] = useState<string | null>(null)
+//   const [sessions, setSessions] = useState<Session[]>(initialSessions)
+
+//   // ⭐⭐⭐ ADD ONLY THIS STATE
+//   const [suggestions, setSuggestions] = useState<string[]>([])
+
+//   const scrollRef = useRef<HTMLDivElement | null>(null)
+//   const fileRef = useRef<HTMLInputElement | null>(null)
+
+//   const handleFileUpload = async (file: File) => {
+//     const userMsg: Message = {
+//       id: crypto.randomUUID(),
+//       role: "user",
+//       text: `📎 Uploaded: ${file.name}`,
+//     }
+
+//     setMessages((prev) => [...prev, userMsg])
+//     setLoading(true)
+
+//     try {
+//       const formData = new FormData()
+//       formData.append("file", file)
+
+//       const res = await fetch("/api/upload", {
+//         method: "POST",
+//         body: formData,
+//       })
+
+//       const data = await res.json()
+
+//       const aiMsg: Message = {
+//         id: crypto.randomUUID(),
+//         role: "assistant",
+//         text: data?.text || "✅ File received",
+//       }
+
+//       setMessages((prev) => [...prev, aiMsg])
+//     } catch {
+//       setMessages((prev) => [
+//         ...prev,
+//         {
+//           id: crypto.randomUUID(),
+//           role: "assistant",
+//           text: "❌ Upload failed",
+//         },
+//       ])
+//     } finally {
+//       setLoading(false)
+//     }
+//   }
+
+//   useEffect(() => {
+//     scrollRef.current?.scrollTo({
+//       top: scrollRef.current.scrollHeight,
+//       behavior: "smooth",
+//     })
+//   }, [messages])
+
+//   useEffect(() => {
+//     const restoreSession = async () => {
+//       if (initialSessionId) {
+//         await loadSession(initialSessionId)
+//         return
+//       }
+
+//       const saved = localStorage.getItem("activeSession")
+//       if (!saved) return
+
+//       const exists = initialSessions?.find((s) => s.id === saved)
+
+//       if (exists) {
+//         await loadSession(saved)
+//       } else {
+//         localStorage.removeItem("activeSession")
+//       }
+//     }
+
+//     restoreSession()
+//   }, [])
+
+//   const loadSession = async (id: string) => {
+//     try {
+//       setSessionId(id)
+//       localStorage.setItem("activeSession", id)
+//       setMessages([])
+
+//       const res = await fetch(`/api/chat/history?sessionId=${id}`)
+//       const data = await res.json()
+
+//       setMessages(
+//         data.map((m: any) => ({
+//           id: m.id,
+//           role: m.role,
+//           text: m.content,
+//         }))
+//       )
+//     } catch (e) {
+//       console.log(e)
+//     }
+//   }
+
+//   const sendMessage = async (text: string) => {
+//     if (!text.trim() || loading) return
+
+//     const userMsg: Message = {
+//       id: crypto.randomUUID(),
+//       role: "user",
+//       text,
+//     }
+
+//     const updated = [...messages, userMsg]
+//     setMessages(updated)
+//     setInput("")
+//     setLoading(true)
+
+//     try {
+//       const res = await fetch("/api/chat", {
+//         method: "POST",
+//         headers: { "Content-Type": "application/json" },
+//         body: JSON.stringify({
+//           messages: updated.map((m) => ({
+//             role: m.role,
+//             content: m.text,
+//           })),
+//           sessionId,
+//         }),
+//       })
+
+//       const data = await res.json()
+
+//       if (!sessionId && data.sessionId) {
+//         setSessionId(data.sessionId)
+//         localStorage.setItem("activeSession", data.sessionId)
+
+//         setSessions((prev) => [
+//           { id: data.sessionId, title: text.slice(0, 40) },
+//           ...prev,
+//         ])
+//       }
+
+//       setMessages((prev) => [
+//         ...prev,
+//         {
+//           id: crypto.randomUUID(),
+//           role: "assistant",
+//           text: data.text,
+//         },
+//       ])
+
+//       // ⭐⭐⭐ ADD ONLY THIS
+//       setSuggestions(data.suggestions || [])
+
+//     } catch (e) {
+//       console.log(e)
+//     } finally {
+//       setLoading(false)
+//     }
+//   }
+
+//   const startNewChat = () => {
+//     setSessionId(null)
+//     setMessages([])
+//     localStorage.removeItem("activeSession")
+//   }
+
+//   return (
+//     <div className="flex flex-col md:flex-row h-[calc(100vh-12rem)] gap-4">
+//       <div className="w-full md:w-64 border rounded-lg p-3 space-y-2">
+//         <Button className="w-full" onClick={startNewChat}>
+//           + New Chat
+//         </Button>
+
+//         <div className="mt-4 space-y-1">
+//           {sessions.map((s) => (
+//             <SessionRow
+//               key={s.id}
+//               session={s}
+//               isActive={s.id === sessionId}
+//               onSelect={() => loadSession(s.id)}
+//             />
+//           ))}
+//         </div>
+//       </div>
+
+//       <Card className="flex flex-1 flex-col overflow-hidden">
+//         <ScrollArea className="flex-1 overflow-y-auto p-4">
+//           <div ref={scrollRef}>
+//             {messages.length === 0 ? (
+//               <div className="grid gap-2">
+//                 {QUICK_PROMPTS.map((p) => (
+//                   <Button key={p} variant="outline" onClick={() => sendMessage(p)}>
+//                     {p}
+//                   </Button>
+//                 ))}
+//               </div>
+//             ) : (
+//               <div className="space-y-4">
+//                 {messages.map((m) => (
+//                   <div
+//                     key={m.id}
+//                     className={cn(
+//                       "flex gap-2 w-full",
+//                       m.role === "user" ? "justify-end" : "justify-start"
+//                     )}
+//                   >
+//                     {m.role === "assistant" && <Bot />}
+//                     <div className="max-w-[70%] rounded-2xl bg-muted px-4 py-3 break-words">
+//                       <p className="whitespace-pre-wrap text-sm">{m.text}</p>
+//                     </div>
+//                     {m.role === "user" && <User />}
+//                   </div>
+//                 ))}
+
+//                 {/* ⭐⭐⭐ ADD ONLY THIS UI */}
+//                 {suggestions.length > 0 && (
+//                   <div className="flex flex-wrap gap-2">
+//                     {suggestions.map((s, i) => (
+//                       <button
+//                         key={i}
+//                         onClick={() => sendMessage(s)}
+//                         className="text-xs px-3 py-1 rounded-full bg-zinc-800 text-white hover:bg-zinc-700"
+//                       >
+//                         {s}
+//                       </button>
+//                     ))}
+//                   </div>
+//                 )}
+
+//                 {loading && (
+//                   <div className="flex gap-2">
+//                     <Bot />
+//                     <Loader2 className="animate-spin" />
+//                   </div>
+//                 )}
+//               </div>
+//             )}
+//           </div>
+//         </ScrollArea>
+
+//         <form
+//           onSubmit={(e) => {
+//             e.preventDefault()
+//             sendMessage(input)
+//           }}
+//           className="flex w-full gap-2 border-t p-4"
+//         >
+//           <button type="button" onClick={() => fileRef.current?.click()}>
+//             <Paperclip size={18} />
+//           </button>
+
+//           <input
+//             type="file"
+//             ref={fileRef}
+//             className="hidden"
+//             onChange={(e) => {
+//               if (e.target.files?.[0]) handleFileUpload(e.target.files[0])
+//             }}
+//           />
+
+//           <Input
+//             className="flex-1"
+//             value={input}
+//             onChange={(e) => setInput(e.target.value)}
+//             placeholder="Type your message..."
+//           />
+
+//           <Button type="submit" disabled={loading}>
+//             <Send />
+//           </Button>
+//         </form>
+//       </Card>
+//     </div>
+//   )
+// }
+
+
 "use client"
 
 import { useState, useRef, useEffect } from "react"
@@ -1900,6 +2555,8 @@ export function ChatInterface({
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>(initialSessions)
 
+  const [suggestions, setSuggestions] = useState<string[]>([])
+
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
@@ -1952,7 +2609,6 @@ export function ChatInterface({
     })
   }, [messages])
 
-  /* ✅ FIXED EFFECT (dependency crash fix) */
   useEffect(() => {
     const restoreSession = async () => {
       if (initialSessionId) {
@@ -1973,8 +2629,6 @@ export function ChatInterface({
     }
 
     restoreSession()
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadSession = async (id: string) => {
@@ -2045,6 +2699,9 @@ export function ChatInterface({
           text: data.text,
         },
       ])
+
+      setSuggestions(data.suggestions || [])
+
     } catch (e) {
       console.log(e)
     } finally {
@@ -2065,7 +2722,9 @@ export function ChatInterface({
           + New Chat
         </Button>
 
-        <div className="mt-4 space-y-1">
+        {/* ⭐⭐⭐ ONLY ADD THIS WRAPPER */}
+        <div className="mt-4 space-y-1 max-h-[60vh] overflow-y-auto pr-1">
+
           {sessions.map((s) => (
             <SessionRow
               key={s.id}
@@ -2074,6 +2733,7 @@ export function ChatInterface({
               onSelect={() => loadSession(s.id)}
             />
           ))}
+
         </div>
       </div>
 
@@ -2105,6 +2765,20 @@ export function ChatInterface({
                     {m.role === "user" && <User />}
                   </div>
                 ))}
+
+                {suggestions.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        onClick={() => sendMessage(s)}
+                        className="text-xs px-3 py-1 rounded-full bg-zinc-800 text-white hover:bg-zinc-700"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {loading && (
                   <div className="flex gap-2">
