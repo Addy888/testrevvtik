@@ -452,27 +452,32 @@ export default function Page() {
         <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-20 items-center">
 
           <motion.div initial={{opacity:0,y:60}} animate={{opacity:1,y:0}}>
-            <h1 className="text-7xl font-bold leading-tight">
-              The AI Sales Trainer
+            <h1 className="text-6xl font-bold leading-tight">
+              Are You Executing Like A Top 
             </h1>
 
             <h2 className="text-7xl font-bold bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Everyone Needs
+              Sales Rep?
             </h2>
 
             <p className="mt-6 text-lg text-gray-600 max-w-xl">
-              Practice real conversations, handle objections, and accelerate your team's learning with AI-powered coaching.
+              Some reps consistently book meetings. Others don’t. It is not a work ethic issue. It is an execution gap. Execution gaps are the small mistakes that stop meetings from turning into deals.
+
+
+            </p>
+            <p className="mt-4 font-semibold text-lg text-gray-600 max-w-xl">
+              Close the gap. Start executing like a top sales Representative.
             </p>
 
             <div className="flex gap-4 mt-10">
               <Button className="shadow-lg hover:scale-105 transition">
                 <Link href="/auth/signup" className="flex items-center gap-2">
-                  Try AI Demo <ArrowRight className="w-4"/>
+                  Find Your Execution Gaps <ArrowRight className="w-4"/>
                 </Link>
               </Button>
 
               <Button variant="outline">
-                <Link href="/contact">Book Demo</Link>
+                <Link href="/auth/login">See How It Works</Link>
               </Button>
             </div>
           </motion.div>
@@ -550,8 +555,8 @@ export default function Page() {
 
       {/* FEATURES */}
       <section className="py-28">
-        <h2 className="text-center text-4xl font-bold mb-16">
-          Powerful AI Tools for Sales
+        <h2 className="text-center text-4xl font-bold mb-16 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 bg-clip-text text-transparent">
+          Fix How You Execute In Real Conversations.
         </h2>
 
         <div className="max-w-6xl mx-auto grid md:grid-cols-4 gap-8 px-6">
@@ -573,26 +578,40 @@ export default function Page() {
         </div>
       </section>
 
-      {/* STATS */}
-      <section className="py-24 bg-white">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-4 text-center gap-10">
-          {["10x","500+","98%","24/7"].map((v,i)=>(
-            <motion.div key={i} initial={{scale:.6,opacity:0}} whileInView={{scale:1,opacity:1}}>
-              <h3 className="text-6xl font-bold bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 bg-clip-text text-transparent">
-                {v}
-              </h3>
-              <p className="text-gray-600 mt-2">
-                {["Faster Learning","Sales Scenarios","Success Rate","AI Coach"][i]}
-              </p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
+{/* EXECUTION CTA */}
+<section className="py-28 bg-white">
+  <div className="max-w-3xl mx-auto text-center px-6">
+
+    <h2 className="text-4xl font-bold bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 bg-clip-text text-transparent">
+      Close The Gap. Start Executing.
+    </h2>
+    <p className="text-7x1 font-semibold text-gray-600 mt-4">
+      Execution gaps are the small mistakes that stop conversations turning into meetings. You’re active. But are you converting? Fix the gap. Build consistent pipeline.
+    </p>
+    <div className="flex justify-center items-center gap-4 mt-10 flex-wrap">
+
+      <Button variant="outline">
+        <Link href="/auth/login">
+          See How It Works
+        </Link>
+      </Button>
+
+      <Button className="shadow-lg hover:scale-105 transition">
+        <Link href="/auth/signup" className="flex items-center gap-2">
+          Find Your Execution Gaps 
+          <ArrowRight className="w-4"/>
+        </Link>
+      </Button>
+
+    </div>
+
+  </div>
+</section>
 
       {/* PRICING */}
       <section className="py-28">
         <h2 className="text-center text-4xl font-bold mb-16">
-          Simple Transparent Pricing
+          Pricing
         </h2>
 
         <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-10 px-6">
@@ -605,7 +624,7 @@ export default function Page() {
                 "Basic sales scenarios",
                 "Email support",
                 "Performance analytics",
-                "Mobile app access"
+                
               ]
             },
             {
@@ -622,7 +641,7 @@ export default function Page() {
               ]
             },
             {
-              name:"Team",
+              name:"Upcoming Team Plan",
               price:"$99",
               features:[
                 "Everything in Pro",
