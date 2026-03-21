@@ -588,7 +588,7 @@ export default function Page() {
     <p className="text-7x1 font-semibold text-gray-600 mt-4">
       Execution gaps are the small mistakes that stop conversations turning into meetings. You’re active. But are you converting?
     </p>
-    <p className="text-lg font-semibold text-black-600 mt-4">
+    <p className="text-7x1 font-semibold text-black-600 mt-4">
       Fix the gap. Build consistent pipeline.
     </p>
 
