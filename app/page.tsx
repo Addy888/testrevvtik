@@ -586,8 +586,12 @@ export default function Page() {
       Close The Gap. Start Executing.
     </h2>
     <p className="text-7x1 font-semibold text-gray-600 mt-4">
-      Execution gaps are the small mistakes that stop conversations turning into meetings. You’re active. But are you converting? Fix the gap. Build consistent pipeline.
+      Execution gaps are the small mistakes that stop conversations turning into meetings. You’re active. But are you converting?
     </p>
+    <p className="text-lg font-semibold text-black-600 mt-4">
+      Fix the gap. Build consistent pipeline.
+    </p>
+
     <div className="flex justify-center items-center gap-4 mt-10 flex-wrap">
 
       <Button variant="outline">
