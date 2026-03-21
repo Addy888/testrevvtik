@@ -461,12 +461,12 @@ export default function Page() {
             </h2>
 
             <p className="mt-6 text-lg text-gray-600 max-w-xl">
-              Some reps consistently book meetings. Others don’t. It is not a work ethic issue. It is an execution gap. Execution gaps are the small mistakes that stop meetings from turning into deals.
+              Some reps consistently book meetings. Others don’t. It is not a work ethic issue. It is an execution gap. Execution gaps are the small mistakes that stop convection from turning into meetings.
 
 
             </p>
             <p className="mt-4 font-semibold text-lg text-gray-600 max-w-xl">
-              Close the gap. Start executing like a top sales Representative.
+              Close the gap. Start executing like a top Sales Representative.
             </p>
 
             <div className="flex gap-4 mt-10">
