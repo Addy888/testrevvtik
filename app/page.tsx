@@ -461,7 +461,7 @@ export default function Page() {
             </h2>
 
             <p className="mt-6 text-lg text-gray-600 max-w-xl">
-              Some reps consistently book meetings. Others don’t. It is not a work ethic issue. It is an execution gap. Execution gaps are the small mistakes that stop convection from turning into meetings.
+              Some reps consistently book meetings. Others don’t. It is not a work ethic issue. It is an execution gap. Execution gaps are the small mistakes that stop conversation from turning into meetings.
 
 
             </p>
@@ -504,14 +504,14 @@ export default function Page() {
                   </div>
 
                   <div>
-                    <h4 className="font-semibold">AI Sales Simulation</h4>
+                    <h4 className="font-semibold">Session 1: Objection Handling</h4>
                     <p className="text-xs text-gray-400">Live Practice Session</p>
                   </div>
                 </div>
 
                 <div className="text-xs bg-gray-100 px-3 py-1 rounded-full flex items-center gap-1">
                   <span className="w-2 h-2 bg-green-500 rounded-full"/>
-                  AI Active
+                  
                 </div>
               </div>
 
@@ -524,7 +524,7 @@ export default function Page() {
                   <div className="bg-blue-50 border rounded-xl p-4 max-w-md">
                     "Your pricing seems high compared to competitors..."
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">Customer</p>
+                  <p className="text-xs text-gray-400 mt-1">Prospect</p>
                 </div>
 
                 <div className="flex justify-end">
@@ -568,10 +568,10 @@ export default function Page() {
             >
               <Icon className="text-blue-600 mb-4"/>
               <h3 className="font-semibold">
-                {["AI Sales Coach","Voice Pitch Training","Objection Handling","Sales Analytics"][i]}
+                {["Practice Real Sales Conversations","Improve How You Sound","Handle Pushback Better","See What Costs Meetings"][i]}
               </h3>
               <p className="text-gray-500 text-sm mt-2">
-                Train with intelligent AI simulations and real-time feedback.
+                
               </p>
             </motion.div>
           ))}
@@ -586,10 +586,10 @@ export default function Page() {
       Close The Gap. Start Executing.
     </h2>
     <p className="text-7x1 font-semibold text-gray-600 mt-4">
-      Execution gaps are the small mistakes that stop conversations turning into meetings. You’re active. But are you converting?
+      Execution gaps are the small mistakes that stop conversation from turning into meetings. You’re active. But are you converting?
     </p>
     <p className="text-7x1 font-semibold text-black-600 mt-4">
-      Fix the gap. Build consistent pipeline.
+      Fix the gap. Build a consistent pipeline.
     </p>
 
     <div className="flex justify-center items-center gap-4 mt-10 flex-wrap">
@@ -645,7 +645,7 @@ export default function Page() {
               ]
             },
             {
-              name:"Upcoming Team Plan",
+              name:"Coming Soon: Team Plan",
               price:"$99",
               features:[
                 "Everything in Pro",
