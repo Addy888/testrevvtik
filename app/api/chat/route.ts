@@ -666,6 +666,7 @@ import { anthropic } from "@ai-sdk/anthropic"
 import { generateText } from "ai"
 import { createClient } from "@/lib/supabase/server"
 import { rateLimit } from "@/lib/infra/rate-limit"
+import { enhanceUserPrompt } from "@/lib/ai/chat-enhancer"
 import PQueue from "p-queue"
 
 export const runtime = "nodejs"
@@ -818,6 +819,9 @@ export async function POST(req: Request) {
     const conversationPrompt = messages
       .map((m: any) => `${m.role}: ${m.content}`)
       .join("\n")
+    const userMessage = lastUserMessage
+    const history = messages
+    const enhancedPrompt = enhanceUserPrompt(userMessage, history)
 
     const result = await safeAICall(() =>
       generateText({
@@ -832,7 +836,7 @@ STRICT RULES:
 - Never use markdown
 - Reply only in clean plain sentences
 `,
-        prompt: conversationPrompt,
+        prompt: enhancedPrompt,
         maxOutputTokens: 800,
       })
     ) as any
