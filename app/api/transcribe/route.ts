@@ -134,11 +134,24 @@ export async function POST(req: Request) {
     const supabase = await createClient()
     const appUser = await getAppUserFromSupabase(supabase)
 
-    const body = (await req.json()) as { recording_id?: string }
-    const recordingId = body?.recording_id
+    const body = (await req.json()) as { recording_id?: string; file_url?: string }
+    let recordingId = body?.recording_id
+
+    if (!recordingId && body?.file_url) {
+      let lookup: any = supabase
+        .from("recordings")
+        .select("id")
+        .eq("company_id", appUser.company_id)
+        .eq("file_url", String(body.file_url))
+        .order("created_at", { ascending: false })
+        .limit(1)
+      if (appUser.role === "salesperson") lookup = lookup.eq("user_id", appUser.id)
+      const { data } = await lookup.maybeSingle()
+      recordingId = data?.id
+    }
 
     if (!recordingId) {
-      return NextResponse.json({ error: "Missing recording_id" }, { status: 400 })
+      return NextResponse.json({ error: "Missing recording_id (or file_url)" }, { status: 400 })
     }
 
     // If transcript already exists, return it (idempotent).

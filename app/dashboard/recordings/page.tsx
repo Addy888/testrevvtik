@@ -157,6 +157,23 @@ export default function RecordingsPage() {
 
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Upload failed')
+
+      // Auto-transcribe after successful upload (best default UX).
+      const recordingId = data?.recordingId
+      if (recordingId) {
+        setBusyAction(`transcribe:${recordingId}`)
+        const tRes = await fetch('/api/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recording_id: String(recordingId) }),
+        })
+        const tData = await tRes.json().catch(() => ({}))
+        if (!tRes.ok) {
+          // Keep recording saved even if transcription fails.
+          setErrorMsg(tData?.error || 'Transcription failed. You can retry using the Transcribe button.')
+        }
+      }
+
       setFileUrl('')
       setFileInput(null)
       setRefreshTick((t) => t + 1)
@@ -332,6 +349,8 @@ export default function RecordingsPage() {
                     : null
 
                   const score = scoreValue(scoreRow)
+                  const url = String(r.file_url || r.url || r.fileUrl || '')
+                  const isVideo = url.toLowerCase().includes('.mp4')
 
                   return (
                     <TableRow key={r.id}>
@@ -347,6 +366,20 @@ export default function RecordingsPage() {
                             {r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}
                           </div>
                         </div>
+
+                        {url ? (
+                          <div className="mt-3">
+                            {isVideo ? (
+                              <video
+                                controls
+                                src={url}
+                                className="w-full max-w-[520px] rounded-lg border border-border/50 bg-black"
+                              />
+                            ) : (
+                              <audio controls src={url} className="w-full max-w-[520px]" />
+                            )}
+                          </div>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
