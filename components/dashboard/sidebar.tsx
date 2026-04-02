@@ -270,12 +270,22 @@ import {
   History,
   LogOut,
   Zap,
+  Video,
+  Users,
+  User,
+  Building2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { useAppUser } from "@/hooks/useAppUser"
 
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
+  { href: "/dashboard/personal", icon: User, label: "Personal" },
+  { href: "/dashboard/company", icon: Building2, label: "Company" },
+  { href: "/dashboard/manager", icon: Users, label: "Manager" },
+  { href: "/dashboard/recordings", icon: Video, label: "Recordings" },
+  { href: "/dashboard/analysis", icon: MessageSquare, label: "Analysis" },
   { href: "/dashboard/ai-agent", icon: MessageSquare, label: "AI Agent" },
   { href: "/dashboard/voice", icon: Mic, label: "Voice Training" },
   { href: "/dashboard/history", icon: History, label: "History" },
@@ -289,6 +299,12 @@ const navItems = [
 export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const { appUser } = useAppUser()
+
+  const isPersonal = String(appUser?.company_type ?? "").toLowerCase() === "personal"
+  const visibleNavItems = isPersonal
+    ? navItems.filter((item) => item.href !== "/dashboard/company" && item.href !== "/dashboard/manager")
+    : navItems
 
   const handleSignOut = async () => {
     const supabase = createClient()
@@ -314,7 +330,7 @@ export function DashboardSidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 p-4">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = pathname === item.href
 
             return (

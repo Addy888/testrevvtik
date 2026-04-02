@@ -161,11 +161,11 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"   // ✅ ADDED
 import { Zap, Eye, EyeOff } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -173,15 +173,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
+type Mode = "individual" | "team"
+const MODE_KEY = "mode"
+
 export default function SignUpPage() {
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [mode, setMode] = useState<Mode>("individual")
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const router = useRouter()
 
@@ -189,42 +193,57 @@ export default function SignUpPage() {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match")
-      setIsLoading(false)
-      return
-    }
-
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters")
-      setIsLoading(false)
-      return
-    }
-
-    const supabase = createClient()
+    setMessage(null)
 
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
+      try {
+        localStorage.setItem(MODE_KEY, mode)
+      } catch {
+        // ignore
+      }
+
+      const emailTrimmed = email.trim().toLowerCase()
+
+      if (password.length < 6) {
+        setError("Password must be at least 6 characters")
+        return
+      }
+      if (password !== confirmPassword) {
+        setError("Passwords do not match")
+        return
+      }
+
+      const supabase = createClient()
+      const { error: signUpError } = await supabase.auth.signUp({
+        email: emailTrimmed,
         password,
         options: {
-          emailRedirectTo: `${location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
-            full_name: fullName,
+            full_name: fullName.trim() || undefined,
           },
         },
       })
 
-      if (error) throw error
+      if (signUpError) throw signUpError
 
-      router.push("/auth/signup-success")
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Signup failed")
+      setMessage("Account created. Redirecting to onboarding...")
+      router.replace("/onboarding")
+    } catch (err: any) {
+      setError(err?.message || "Signup failed")
     } finally {
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MODE_KEY)
+      if (saved === "individual" || saved === "team") setMode(saved)
+    } catch {
+      // ignore
+    }
+  }, [])
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-background p-6">
@@ -245,23 +264,56 @@ export default function SignUpPage() {
           </Link>
         </div>
 
-        <Card>
+        <Card className="shadow-sm rounded-xl">
           <CardHeader>
             <CardTitle className="text-2xl">Create an account</CardTitle>
             <CardDescription>
-              Start your AI sales training journey today
+              Choose your setup, then create your account
             </CardDescription>
           </CardHeader>
 
           <CardContent>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <Button
+                type="button"
+                variant={mode === "individual" ? "default" : "outline"}
+                onClick={() => {
+                  setMode("individual")
+                  try {
+                    localStorage.setItem(MODE_KEY, "individual")
+                  } catch {
+                    // ignore
+                  }
+                }}
+                disabled={isLoading}
+              >
+                Continue as Individual
+              </Button>
+              <Button
+                type="button"
+                variant={mode === "team" ? "default" : "outline"}
+                onClick={() => {
+                  setMode("team")
+                  try {
+                    localStorage.setItem(MODE_KEY, "team")
+                  } catch {
+                    // ignore
+                  }
+                }}
+                disabled={isLoading}
+              >
+                Continue as Team
+              </Button>
+            </div>
+
             <form onSubmit={handleSignUp} className="flex flex-col gap-4">
               <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
+                <Label htmlFor="fullName">Full Name (optional)</Label>
                 <Input
                   id="fullName"
                   type="text"
-                  required
                   value={fullName}
+                  placeholder="Your name"
                   onChange={(e) => setFullName(e.target.value)}
                 />
               </div>
@@ -277,7 +329,6 @@ export default function SignUpPage() {
                 />
               </div>
 
-              {/* PASSWORD */}
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
@@ -286,11 +337,12 @@ export default function SignUpPage() {
                     type={showPassword ? "text" : "password"}
                     required
                     value={password}
+                    placeholder="Minimum 6 characters"
                     onChange={(e) => setPassword(e.target.value)}
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() => setShowPassword((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -298,37 +350,25 @@ export default function SignUpPage() {
                 </div>
               </div>
 
-              {/* CONFIRM PASSWORD */}
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
-                <div className="relative">
-                  <Input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowConfirmPassword(!showConfirmPassword)
-                    }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  >
-                    {showConfirmPassword ? (
-                      <EyeOff size={18} />
-                    ) : (
-                      <Eye size={18} />
-                    )}
-                  </button>
-                </div>
+                <Input
+                  id="confirmPassword"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={confirmPassword}
+                  placeholder="Re-enter your password"
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
               </div>
 
               {error && (
                 <p className="text-sm text-red-500 text-center">
                   {error}
                 </p>
+              )}
+              {message && (
+                <p className="text-sm text-emerald-600 text-center">{message}</p>
               )}
 
               <Button type="submit" disabled={isLoading}>

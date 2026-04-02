@@ -115,23 +115,36 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
-import { Eye, EyeOff } from "lucide-react"   // ✅ ADDED
+import { Eye, EyeOff } from "lucide-react"
+
+type Mode = "individual" | "team"
+const MODE_KEY = "mode"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)   // ✅ ADDED
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [mode, setMode] = useState<Mode>("individual")
+  const [showPassword, setShowPassword] = useState(false)
 
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MODE_KEY)
+      if (saved === "individual" || saved === "team") setMode(saved)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser()
       if (data.user) {
-        router.replace("/dashboard")
+        router.replace("/onboarding")
       }
     }
     checkUser()
@@ -141,18 +154,25 @@ export default function LoginPage() {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    const emailTrimmed = email.trim().toLowerCase()
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
+      try {
+        localStorage.setItem(MODE_KEY, mode)
+      } catch {
+        // ignore
+      }
+
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email: emailTrimmed,
         password,
       })
 
-      if (error) throw error
+      if (loginError) throw loginError
 
-      router.push("/dashboard")
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred")
+      router.replace("/onboarding")
+    } catch (err: any) {
+      setError(err?.message || "Login failed")
     } finally {
       setIsLoading(false)
     }
@@ -172,15 +192,48 @@ export default function LoginPage() {
           </Link>
         </div>
 
-        <Card className="border-border/50 bg-card">
+        <Card className="border-border/50 bg-card shadow-sm rounded-xl">
           <CardHeader>
             <CardTitle className="text-2xl">Welcome back</CardTitle>
             <CardDescription>
-              Enter your credentials to access your account
+              Sign in with your email and password
             </CardDescription>
           </CardHeader>
 
           <CardContent>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <Button
+                type="button"
+                variant={mode === "individual" ? "default" : "outline"}
+                onClick={() => {
+                  setMode("individual")
+                  try {
+                    localStorage.setItem(MODE_KEY, "individual")
+                  } catch {
+                    // ignore
+                  }
+                }}
+                disabled={isLoading}
+              >
+                Continue as Individual
+              </Button>
+              <Button
+                type="button"
+                variant={mode === "team" ? "default" : "outline"}
+                onClick={() => {
+                  setMode("team")
+                  try {
+                    localStorage.setItem(MODE_KEY, "team")
+                  } catch {
+                    // ignore
+                  }
+                }}
+                disabled={isLoading}
+              >
+                Continue as Team
+              </Button>
+            </div>
+
             <form onSubmit={handleLogin}>
               <div className="flex flex-col gap-4">
                 <div className="space-y-2">
@@ -195,22 +248,20 @@ export default function LoginPage() {
                   />
                 </div>
 
-                {/* ✅ PASSWORD FIELD UPDATED */}
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
-
                   <div className="relative">
                     <Input
                       id="password"
                       type={showPassword ? "text" : "password"}
+                      placeholder="Your password"
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
-
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
+                      onClick={() => setShowPassword((v) => !v)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                     >
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -218,19 +269,24 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {error && (
-                  <p className="text-sm text-destructive">
-                    {error}
-                  </p>
-                )}
+                {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
                 <Button
                   type="submit"
                   className="w-full glow-cyan-sm"
                   disabled={isLoading}
                 >
-                  {isLoading ? "Signing in..." : "Sign In"}
+                  {isLoading ? "Signing in..." : "Login"}
                 </Button>
+
+                <div className="flex items-center justify-between gap-3">
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm text-primary underline underline-offset-4 hover:text-primary/80"
+                  >
+                    Forgot Password?
+                  </Link>
+                </div>
               </div>
 
               <p className="mt-4 text-center text-sm text-muted-foreground">
@@ -243,14 +299,6 @@ export default function LoginPage() {
                 </Link>
               </p>
 
-              <p className="mt-2 text-center text-sm">
-                <Link
-                  href="/auth/forgot-password"
-                  className="text-primary underline underline-offset-4"
-                >
-                  Forgot password?
-                </Link>
-              </p>
             </form>
           </CardContent>
         </Card>

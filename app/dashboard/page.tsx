@@ -160,10 +160,8 @@
 
 
 import { createClient } from "@/lib/supabase/server"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
-import { MessageSquare, Mic, Clock, Trophy, ArrowRight } from "lucide-react"
+import { getAppUserFromSupabase } from "@/lib/supabase/getAppUser"
+import { redirect } from "next/navigation"
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -172,196 +170,27 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) return null
+  if (!user) redirect("/auth/login")
 
-  /* ===================================================== */
-  /* 📊 COUNT AI CHAT SESSIONS */
-  /* ===================================================== */
+  try {
+    const appUser = await getAppUserFromSupabase(supabase)
+    const companyType = String(appUser.company_type ?? "").toLowerCase()
 
-  const { count: chatCount } = await supabase
-    .from("chat_sessions")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user.id)
+    if (appUser.role === "manager") {
+      redirect(companyType === "personal" ? "/dashboard/personal" : "/dashboard/manager")
+    }
+    if (appUser.role === "salesperson") {
+      redirect("/dashboard/personal")
+    }
+    if (appUser.role === "admin") {
+      redirect(companyType === "personal" ? "/dashboard/personal" : "/dashboard/company")
+    }
 
-  /* ===================================================== */
-  /* 🎤 COUNT VOICE SESSIONS */
-  /* ===================================================== */
-
-  const { count: voiceCount } = await supabase
-    .from("practice_sessions")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .eq("session_type", "voice")
-
-  /* ===================================================== */
-  /* 📈 GET RECENT PRACTICE SESSIONS (FOR ACTIVITY) */
-  /* ===================================================== */
-
-  const { data: recentSessions } = await supabase
-    .from("practice_sessions")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(5)
-
-  /* ===================================================== */
-  /* 🧮 CALCULATIONS */
-  /* ===================================================== */
-
-  const totalSessions =
-    (chatCount || 0) + (voiceCount || 0)
-
-  const avgScore =
-    recentSessions && recentSessions.length > 0
-      ? Math.round(
-          recentSessions.reduce(
-            (acc, s) => acc + (s.score || 0),
-            0
-          ) / recentSessions.length
-        )
-      : 0
-
-  const userName =
-    user.user_metadata?.full_name ||
-    user.email?.split("@")[0] ||
-    "there"
-
-  return (
-    <div>
-      {/* ============================= */}
-      {/* HEADER */}
-      {/* ============================= */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">
-          Welcome back, {userName}
-        </h1>
-        <p className="mt-1 text-muted-foreground">
-          Ready to sharpen your sales skills today?
-        </p>
-      </div>
-
-      {/* ============================= */}
-      {/* QUICK STATS */}
-      {/* ============================= */}
-      <div className="grid gap-4 md:grid-cols-4 mb-8">
-        {/* TOTAL */}
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Sessions
-            </CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {totalSessions}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* AVERAGE SCORE */}
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Average Score
-            </CardTitle>
-            <Trophy className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {avgScore}%
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* AI CHAT COUNT */}
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              AI Chats
-            </CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {chatCount || 0}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* VOICE COUNT */}
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Voice Sessions
-            </CardTitle>
-            <Mic className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {voiceCount || 0}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ============================= */}
-      {/* RECENT ACTIVITY */}
-      {/* ============================= */}
-      <Card className="border-border/50 bg-card">
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {recentSessions && recentSessions.length > 0 ? (
-            <div className="space-y-4">
-              {recentSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="flex items-center justify-between border-b border-border/50 pb-4 last:border-0 last:pb-0"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                      {session.session_type === "voice" ? (
-                        <Mic className="h-5 w-5 text-muted-foreground" />
-                      ) : (
-                        <MessageSquare className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-medium capitalize">
-                        {session.session_type} Practice
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(
-                          session.created_at
-                        ).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  {session.score && (
-                    <div className="text-sm font-medium text-primary">
-                      {session.score}%
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground mb-4">
-                You can start a practice session to see your previous activity by clicking the button below!
-              </p>
-              <Button asChild>
-                <Link href="/dashboard/ai-agent">
-                  Start Learning
-                </Link>
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
+    redirect("/dashboard/company")
+  } catch (error: any) {
+    if (error?.status === 404) {
+      redirect("/onboarding")
+    }
+    throw error
+  }
 }
