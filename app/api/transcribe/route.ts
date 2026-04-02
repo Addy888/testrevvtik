@@ -96,9 +96,10 @@ async function insertTranscriptWithFallback({
   transcriptText: string
 }) {
   const candidates: Array<Record<string, string>> = [
+    // Prefer the canonical column name your UI/API expects.
+    { text: transcriptText },
     { content: transcriptText },
     { transcript: transcriptText },
-    { text: transcriptText },
     { transcript_text: transcriptText },
   ]
 

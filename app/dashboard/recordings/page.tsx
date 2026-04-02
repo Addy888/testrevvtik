@@ -160,12 +160,13 @@ export default function RecordingsPage() {
 
       // Auto-transcribe after successful upload (best default UX).
       const recordingId = data?.recordingId
+      const uploadedUrl = String(data?.file_url || '')
       if (recordingId) {
         setBusyAction(`transcribe:${recordingId}`)
         const tRes = await fetch('/api/transcribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ recording_id: String(recordingId) }),
+          body: JSON.stringify({ recording_id: String(recordingId), file_url: uploadedUrl || undefined }),
         })
         const tData = await tRes.json().catch(() => ({}))
         if (!tRes.ok) {
@@ -190,7 +191,9 @@ export default function RecordingsPage() {
 
     setBusyAction(`transcribe:${recordingId}`)
     try {
-      const body = { recording_id: recordingId }
+      const rec = recordings.find((r) => String(r.id) === String(recordingId))
+      const url = rec ? String(rec.file_url || rec.url || rec.fileUrl || '') : ''
+      const body = { recording_id: recordingId, file_url: url || undefined }
 
       const res = await fetch('/api/transcribe', {
         method: 'POST',
@@ -351,6 +354,14 @@ export default function RecordingsPage() {
                   const score = scoreValue(scoreRow)
                   const url = String(r.file_url || r.url || r.fileUrl || '')
                   const isVideo = url.toLowerCase().includes('.mp4')
+                  const isTranscribing = busyAction === `transcribe:${String(r.id)}`
+                  const transcriptText = String(
+                    transcript?.text ||
+                      transcript?.content ||
+                      transcript?.transcript ||
+                      transcript?.transcript_text ||
+                      ''
+                  )
 
                   return (
                     <TableRow key={r.id}>
@@ -380,10 +391,29 @@ export default function RecordingsPage() {
                             )}
                           </div>
                         ) : null}
+
+                        <div className="mt-3">
+                          <div className="text-sm font-medium">Transcript</div>
+                          {isTranscribing ? (
+                            <div className="text-sm text-muted-foreground">Transcribing…</div>
+                          ) : transcriptText ? (
+                            <pre className="whitespace-pre-wrap break-words text-sm leading-6 bg-muted/30 border border-border/50 rounded-lg p-3 mt-2">
+                              {transcriptText}
+                            </pre>
+                          ) : (
+                            <div className="text-sm text-muted-foreground mt-2">No transcript yet.</div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
-                          {transcript ? <Badge>Transcribed</Badge> : <Badge variant="outline">Need transcription</Badge>}
+                          {isTranscribing ? (
+                            <Badge variant="secondary">Transcribing…</Badge>
+                          ) : transcript ? (
+                            <Badge>Transcribed</Badge>
+                          ) : (
+                            <Badge variant="outline">Need transcription</Badge>
+                          )}
                           {analysis ? <Badge>Analyzed</Badge> : <Badge variant="outline">Need analysis</Badge>}
                           {typeof score === 'number' ? (
                             <Badge variant="secondary">Score {score}%</Badge>
@@ -391,26 +421,6 @@ export default function RecordingsPage() {
                             <Badge variant="outline">Need scoring</Badge>
                           )}
                         </div>
-                        {transcript ? (
-                          <p className="mt-2 text-xs text-muted-foreground max-w-[320px] break-words">
-                            {String(
-                              transcript?.content ||
-                                transcript?.transcript ||
-                                transcript?.text ||
-                                transcript?.transcript_text ||
-                                ''
-                            ).slice(0, 140)}
-                            {String(
-                              transcript?.content ||
-                                transcript?.transcript ||
-                                transcript?.text ||
-                                transcript?.transcript_text ||
-                                ''
-                            ).length > 140
-                              ? '…'
-                              : ''}
-                          </p>
-                        ) : null}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">

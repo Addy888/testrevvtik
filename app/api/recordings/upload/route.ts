@@ -124,6 +124,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       recordingId: (recording as any).id,
+      file_url,
     })
   } catch (err: any) {
     const status = err?.status || 500
