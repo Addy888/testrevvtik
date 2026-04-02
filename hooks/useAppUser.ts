@@ -32,11 +32,17 @@ export function useAppUser() {
           .from('users')
           .select('id, company_id, role')
           .eq('id', user.id)
-          .single()
+          .maybeSingle()
 
-        if (usersError || !data) {
+        if (usersError) {
+          console.error('Error fetching user profile:', usersError)
+        }
+
+        if (!data) {
           setAppUser(null)
-          setError('User profile not found')
+          // Let server-side flow create the profile lazily if needed.
+          // Keep this non-fatal so UI can continue gracefully.
+          setError(null)
           return
         }
 
