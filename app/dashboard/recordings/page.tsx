@@ -134,28 +134,22 @@ export default function RecordingsPage() {
 
     setBusyAction('upload')
     try {
-      let res: Response
-
-      if (fileInput) {
-        const fd = new FormData()
-        fd.append('file', fileInput)
-        res = await fetch('/api/recordings/upload', {
-          method: 'POST',
-          body: fd,
-        })
-      } else {
-        if (!fileUrl.trim()) {
-          setErrorMsg('Choose a file or enter a file URL')
-          return
-        }
-        res = await fetch('/api/recordings/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file_url: fileUrl.trim() }),
-        })
+      if (!fileInput) {
+        setErrorMsg('Choose a file to upload')
+        return
       }
 
+      const fd = new FormData()
+      fd.append('file', fileInput)
+      console.log('Upload started', { name: fileInput.name, size: fileInput.size, type: fileInput.type })
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: fd,
+      })
+
       const data = await res.json()
+      console.log('API response', data)
       if (!res.ok) throw new Error(data?.error || 'Upload failed')
 
       // Auto-transcribe after successful upload (best default UX).

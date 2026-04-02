@@ -1,92 +1,97 @@
-// import { NextResponse } from "next/server"
-
-// export async function POST(req: Request) {
-
-//   const formData = await req.formData()
-
-//   const file = formData.get("file") as File
-
-//   if (!file) {
-//     return NextResponse.json(
-//       { error: "No file" },
-//       { status: 400 }
-//     )
-//   }
-
-//   console.log("UPLOAD OK:", file.name)
-
-//   return NextResponse.json({
-//     text: `✅ File ${file.name} received`
-//   })
-
-// }
-
-
-
-
 import { NextResponse } from "next/server"
-import Anthropic from "@anthropic-ai/sdk"
+import { createClient } from "@/lib/supabase/server"
+import { getAppUserFromSupabase } from "@/lib/supabase/getAppUser"
+import { supabaseAdmin } from "@/lib/supabase/admin"
 
-/* ✅ IMPORTANT for file upload in Next 15/16 */
 export const runtime = "nodejs"
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+const BUCKET = "recordings"
+
+function sanitizeFileName(name: string) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "recording"
+}
+
+async function ensureBucketExists() {
+  const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets()
+  if (listError) {
+    throw new Error(listError.message || "Failed to list storage buckets")
+  }
+
+  const exists = (buckets || []).some((b: any) => String(b?.name) === BUCKET)
+  if (exists) return
+
+  const { error: createError } = await supabaseAdmin.storage.createBucket(BUCKET, { public: true })
+  if (createError) {
+    const msg = String(createError.message || "")
+    if (!msg.toLowerCase().includes("already exists")) {
+      throw new Error(createError.message || `Failed to create bucket "${BUCKET}"`)
+    }
+  }
+}
 
 export async function POST(req: Request) {
   try {
+    const supabase = await createClient()
+    const appUser = await getAppUserFromSupabase(supabase)
+
     const formData = await req.formData()
     const file = formData.get("file")
 
-    if (!file || !(file instanceof File)) {
+    if (!file || !(file instanceof File) || file.size === 0) {
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 })
+    }
+
+    await ensureBucketExists()
+
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+    const safeName = sanitizeFileName(file.name)
+    const storagePath = `files/${appUser.company_id}/${appUser.id}/${Date.now()}_${safeName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, buffer, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      })
+
+    if (uploadError) {
       return NextResponse.json(
-        { text: "❌ No file uploaded" },
+        { error: uploadError.message || "Failed to upload file to storage" },
         { status: 400 }
       )
     }
 
-    /* ⭐ SAFE TEXT READ */
-    const text = await file.text()
+    const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(storagePath)
+    const file_url = pub.publicUrl
 
-    if (!text || text.trim().length < 5) {
-      return NextResponse.json({
-        text: "⚠️ File content empty or unreadable",
+    const { data: recording, error: insertError } = await supabase
+      .from("recordings")
+      .insert({
+        user_id: appUser.id,
+        company_id: appUser.company_id,
+        file_url,
       })
-    }
+      .select("id, file_url")
+      .single()
 
-    /* ⭐ CLAUDE CALL */
-    const response = await anthropic.messages.create({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 700,
-      messages: [
-        {
-          role: "user",
-          content: `Analyze this sales document and give coaching insights:\n${text}`,
-        },
-      ],
-    })
-
-    let aiText = "⚠️ AI could not generate response"
-
-    if (response.content && response.content.length > 0) {
-      const block = response.content[0]
-      if (block.type === "text") {
-        aiText = block.text
-      }
+    if (insertError || !recording) {
+      return NextResponse.json(
+        { error: insertError?.message || "Failed to save recording" },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({
-      text: aiText,
+      ok: true,
+      recordingId: (recording as any).id,
+      file_url: (recording as any).file_url,
     })
-  } catch (err) {
+  } catch (err: any) {
     console.error("UPLOAD ERROR:", err)
-
     return NextResponse.json(
-      {
-        text: "❌ Server error during file analysis",
-      },
-      { status: 500 }
+      { error: err?.message || "Server error during upload" },
+      { status: err?.status || 500 }
     )
   }
 }
