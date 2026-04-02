@@ -2,7 +2,6 @@ import { NextResponse } from "next/server"
 import path from "node:path"
 import { createClient } from "@/lib/supabase/server"
 import { getAppUserFromSupabase } from "@/lib/supabase/getAppUser"
-import { Deepgram } from "@deepgram/sdk"
 
 export const runtime = "nodejs"
 
@@ -28,8 +27,8 @@ async function downloadRecordingBytes({
   supabase: any
   fileUrl: string
 }) {
-  // Prefer direct fetch from the stored URL.
   const fileRes = await fetch(fileUrl)
+
   if (fileRes.ok) {
     const arrayBuffer = await fileRes.arrayBuffer()
     return {
@@ -39,21 +38,15 @@ async function downloadRecordingBytes({
     }
   }
 
-  // Fall back to authenticated Supabase storage download.
   const parsed = parseSupabasePublicStorageUrl(fileUrl)
-  if (!parsed) {
-    throw new Error(
-      "Failed to fetch recording file (URL not accessible and path could not be inferred)"
-    )
-  }
+  if (!parsed) throw new Error("File fetch failed")
 
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .download(parsed.objectPath)
+
   if (error || !data)
-    throw new Error(
-      error?.message || "Failed to download recording from storage"
-    )
+    throw new Error(error?.message || "Download failed")
 
   const arrayBuffer = await data.arrayBuffer()
   return { arrayBuffer, contentType: data.type || "application/octet-stream" }
@@ -69,7 +62,7 @@ function inferFileExt(fileUrl: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 – Speech → Text  (Deepgram nova-2)
+// 🔥 Deepgram via REST API (NO SDK)
 // ---------------------------------------------------------------------------
 
 async function deepgramTranscribe(
@@ -79,26 +72,32 @@ async function deepgramTranscribe(
   const apiKey = process.env.DEEPGRAM_API_KEY
   if (!apiKey) throw new Error("Missing DEEPGRAM_API_KEY")
 
-  const deepgram = new Deepgram(apiKey)
-  const buffer = Buffer.from(audioBuffer)
+  const res = await fetch(
+    "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${apiKey}`,
+        "Content-Type": mimeType,
+      },
+      body: Buffer.from(audioBuffer),
+    }
+  )
 
-  const { result, error } =
-    await deepgram.listen.prerecorded.transcribeFile(buffer, {
-      model: "nova-2",
-      smart_format: true,
-      punctuate: true,
-      mimetype: mimeType,
-    })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error("Deepgram API error: " + text)
+  }
 
-  if (error) throw new Error(`Deepgram error: ${error.message}`)
+  const data = await res.json()
 
-  const raw =
-    result?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? ""
-  return raw
+  return (
+    data?.results?.channels?.[0]?.alternatives?.[0]?.transcript || ""
+  )
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 – Claude cleanup
+// Claude cleanup
 // ---------------------------------------------------------------------------
 
 async function claudeClean(rawText: string): Promise<string> {
@@ -106,10 +105,8 @@ async function claudeClean(rawText: string): Promise<string> {
 
   const apiKey =
     process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || ""
-  if (!apiKey) {
-    console.warn("No ANTHROPIC_API_KEY – skipping Claude cleanup")
-    return rawText
-  }
+
+  if (!apiKey) return rawText
 
   const Anthropic = (await import("@anthropic-ai/sdk")).default
   const anthropic = new Anthropic({ apiKey })
@@ -120,7 +117,7 @@ async function claudeClean(rawText: string): Promise<string> {
     messages: [
       {
         role: "user",
-        content: `You are a transcript editor. Fix punctuation, capitalisation, and filler words. Return ONLY the cleaned transcript text with no commentary.\n\nTranscript:\n${rawText}`,
+        content: `Fix grammar, punctuation. Return ONLY cleaned text.\n\n${rawText}`,
       },
     ],
   })
@@ -130,7 +127,7 @@ async function claudeClean(rawText: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Supabase insert with column-name fallback
+// DB insert
 // ---------------------------------------------------------------------------
 
 async function insertTranscriptWithFallback({
@@ -142,31 +139,23 @@ async function insertTranscriptWithFallback({
   base: Record<string, unknown>
   transcriptText: string
 }) {
-  const candidates: Array<Record<string, string>> = [
-    { text: transcriptText },
-    { content: transcriptText },
-    { transcript: transcriptText },
-    { transcript_text: transcriptText },
-  ]
+  const fields = ["text", "content", "transcript", "transcript_text"]
 
-  let lastError: any = null
-
-  for (const candidate of candidates) {
+  for (const key of fields) {
     const { data, error } = await supabase
       .from("transcripts")
-      .insert({ ...base, ...candidate })
+      .insert({ ...base, [key]: transcriptText })
       .select()
       .single()
 
     if (!error && data) return data
-    lastError = error
   }
 
-  throw lastError || new Error("Failed to insert transcript")
+  throw new Error("Insert failed")
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/transcribe
+// API
 // ---------------------------------------------------------------------------
 
 export async function POST(req: Request) {
@@ -174,140 +163,72 @@ export async function POST(req: Request) {
     const supabase = await createClient()
     const appUser = await getAppUserFromSupabase(supabase)
 
-    const body = (await req.json()) as {
-      recording_id?: string
-      file_url?: string
-    }
+    const body = await req.json()
     let recordingId = body?.recording_id
 
-    // Allow resolution by file_url if recording_id not provided.
     if (!recordingId && body?.file_url) {
-      let lookup: any = supabase
+      const { data } = await supabase
         .from("recordings")
         .select("id")
-        .eq("company_id", appUser.company_id)
-        .eq("file_url", String(body.file_url))
-        .order("created_at", { ascending: false })
+        .eq("file_url", body.file_url)
         .limit(1)
-      if (appUser.role === "salesperson")
-        lookup = lookup.eq("user_id", appUser.id)
-      const { data } = await lookup.maybeSingle()
+        .maybeSingle()
+
       recordingId = data?.id
     }
 
     if (!recordingId) {
-      return NextResponse.json(
-        { error: "Missing recording_id (or file_url)" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Missing recording_id" }, { status: 400 })
     }
 
-    // Idempotency – return early if transcript already exists.
-    let existingQuery: any = supabase
-      .from("transcripts")
-      .select("id")
-      .eq("recording_id", recordingId)
-      .eq("company_id", appUser.company_id)
-    if (appUser.role === "salesperson") {
-      existingQuery = existingQuery.eq("user_id", appUser.id)
-    }
-    const { data: existingTranscript } = await existingQuery.maybeSingle()
-    if (existingTranscript?.id) {
-      return NextResponse.json({
-        transcriptId: existingTranscript.id,
-        alreadyTranscribed: true,
-      })
-    }
-
-    // Fetch the recording row.
-    let recordingQuery: any = supabase
+    const { data: recording } = await supabase
       .from("recordings")
-      .select("id, user_id, company_id, file_url")
+      .select("*")
       .eq("id", recordingId)
-      .eq("company_id", appUser.company_id)
-    if (appUser.role === "salesperson") {
-      recordingQuery = recordingQuery.eq("user_id", appUser.id)
-    }
-    const { data: recording, error: recordingError } =
-      await recordingQuery.single()
+      .single()
 
-    if (recordingError || !recording) {
-      return NextResponse.json(
-        { error: recordingError?.message || "Recording not found" },
-        { status: 404 }
-      )
+    if (!recording) {
+      return NextResponse.json({ error: "Recording not found" }, { status: 404 })
     }
 
-    const fileUrl: string | null = recording.file_url
-    if (!fileUrl || typeof fileUrl !== "string") {
-      return NextResponse.json(
-        { error: "Recording file_url missing" },
-        { status: 400 }
-      )
-    }
-
-    // Download audio bytes.
     const { arrayBuffer, contentType } = await downloadRecordingBytes({
       supabase,
-      fileUrl,
+      fileUrl: recording.file_url,
     })
 
-    const ext = inferFileExt(fileUrl)
+    const ext = inferFileExt(recording.file_url)
     const mime = String(contentType || "").toLowerCase()
 
-    const isMp4 = ext === ".mp4" || mime.includes("video/mp4")
-    const isMp3 =
+    const isValid =
       ext === ".mp3" ||
-      mime.includes("audio/mpeg") ||
-      mime.includes("audio/mp3")
-    const isWav =
       ext === ".wav" ||
-      mime.includes("audio/wav") ||
-      mime.includes("audio/x-wav")
+      ext === ".mp4" ||
+      mime.includes("audio") ||
+      mime.includes("video")
 
-    if (!isMp4 && !isMp3 && !isWav) {
-      return NextResponse.json(
-        {
-          error: `Unsupported format. Supported: .mp3, .wav, .mp4 (got ${
-            ext || mime || "unknown"
-          })`,
-        },
-        { status: 400 }
-      )
+    if (!isValid) {
+      return NextResponse.json({ error: "Unsupported file" }, { status: 400 })
     }
 
-    const deepgramMime = isMp4
-      ? "video/mp4"
-      : isMp3
-        ? "audio/mpeg"
-        : "audio/wav"
-
-    // 🔥 Step 1: Deepgram speech → text
-    const rawText = await deepgramTranscribe(arrayBuffer, deepgramMime)
-
-    // 🔥 Step 2: Claude cleanup
+    const rawText = await deepgramTranscribe(arrayBuffer, mime)
     const finalText = await claudeClean(rawText)
 
-    // 🔥 Step 3: Save to Supabase
-    const base = {
-      user_id: recording.user_id,
-      company_id: appUser.company_id,
-      recording_id: recordingId,
-    }
-
-    const transcriptRow: any = await insertTranscriptWithFallback({
+    const transcript = await insertTranscriptWithFallback({
       supabase,
-      base,
+      base: {
+        user_id: recording.user_id,
+        company_id: appUser.company_id,
+        recording_id: recordingId,
+      },
       transcriptText: finalText,
     })
 
-    return NextResponse.json({ transcriptId: transcriptRow?.id })
+    return NextResponse.json({ transcriptId: transcript.id })
   } catch (err: any) {
-    console.error("[transcribe] ERROR:", err)
-    const status = err?.status || 500
+    console.error(err)
     return NextResponse.json(
-      { error: err?.message || "Transcription failed" },
-      { status }
+      { error: err.message || "Failed" },
+      { status: 500 }
     )
   }
 }
