@@ -10,7 +10,7 @@ import { whisperTranscribeFromBuffer } from "@/lib/ai/openai"
 
 export const runtime = "nodejs"
 
-const BUCKET = process.env.SUPABASE_RECORDINGS_BUCKET || "recordings"
+const BUCKET = "recordings"
 
 function parseSupabasePublicStorageUrl(fileUrl: string): { objectPath: string } | null {
   // supabase storage public urls look like:

@@ -1,47 +1,30 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getAppUserFromSupabase } from "@/lib/supabase/getAppUser"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export const runtime = "nodejs"
 
-const BUCKET = process.env.SUPABASE_RECORDINGS_BUCKET || "recordings"
+const BUCKET = "recordings"
 
 function sanitizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "recording"
 }
 
 async function ensureBucketExists() {
-  // 1) Check bucket via authenticated user client (works if policy allows).
-  // 2) If missing and service role key is available, auto-create bucket (public).
-  const adminKeyPresent = !!process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  try {
-    const admin = createAdminClient()
-    const { data, error } = await admin.storage.getBucket(BUCKET)
-    if (!error && data?.name) return { ok: true as const }
-  } catch {
-    // ignore and fall back
+  const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets()
+  if (listError) {
+    return { ok: false as const, error: listError.message || "Failed to list storage buckets" }
   }
 
-  if (!adminKeyPresent) {
-    return {
-      ok: false as const,
-      error:
-        `Supabase Storage bucket "${BUCKET}" not found. Create it in Supabase (public=true) or set SUPABASE_SERVICE_ROLE_KEY so the app can auto-create it.`,
-    }
-  }
+  const exists = (buckets || []).some((b: any) => String(b?.name) === BUCKET)
+  if (exists) return { ok: true as const }
 
-  const admin = createAdminClient()
-  const { error: createError } = await admin.storage.createBucket(BUCKET, { public: true })
+  const { error: createError } = await supabaseAdmin.storage.createBucket(BUCKET, { public: true })
   if (createError) {
-    // If it already exists, treat as ok.
     const msg = String(createError.message || "")
     if (msg.toLowerCase().includes("already exists")) return { ok: true as const }
-    return {
-      ok: false as const,
-      error: createError.message || `Failed to create bucket "${BUCKET}"`,
-    }
+    return { ok: false as const, error: createError.message || `Failed to create bucket "${BUCKET}"` }
   }
 
   return { ok: true as const }
