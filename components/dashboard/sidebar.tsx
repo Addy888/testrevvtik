@@ -301,10 +301,13 @@ export function DashboardSidebar() {
   const router = useRouter()
   const { appUser } = useAppUser()
 
-  const isPersonal = String(appUser?.company_type ?? "").toLowerCase() === "personal"
-  const visibleNavItems = isPersonal
-    ? navItems.filter((item) => item.href !== "/dashboard/company" && item.href !== "/dashboard/manager")
-    : navItems
+  const role = String(appUser?.role ?? "admin").toLowerCase()
+  const visibleNavItems =
+    role === "salesperson"
+      ? navItems.filter((item) => item.href !== "/dashboard/company" && item.href !== "/dashboard/manager")
+      : role === "manager"
+        ? navItems.filter((item) => item.href !== "/dashboard/company")
+        : navItems
 
   const handleSignOut = async () => {
     const supabase = createClient()

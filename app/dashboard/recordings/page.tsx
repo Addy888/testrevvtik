@@ -264,7 +264,7 @@ export default function RecordingsPage() {
         <div>
           <h1 className="text-2xl font-bold">Recordings</h1>
           <p className="text-muted-foreground">
-            Upload audio/video, transcribe with Whisper, analyze, and score.
+            Upload audio/video, transcribe with Deepgram, clean with Claude AI, and score.
           </p>
         </div>
         <Badge variant="secondary" className="self-start">

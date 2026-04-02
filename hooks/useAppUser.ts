@@ -30,7 +30,7 @@ export function useAppUser() {
 
         const { data, error: usersError } = await supabase
           .from('users')
-          .select('id, company_id, role')
+          .select('id, email, role')
           .eq('id', user.id)
           .maybeSingle()
 
@@ -39,27 +39,15 @@ export function useAppUser() {
         }
 
         if (!data) {
-          setAppUser(null)
-          // Let server-side flow create the profile lazily if needed.
-          // Keep this non-fatal so UI can continue gracefully.
+          setAppUser({
+            id: user.id,
+            email: user.email ?? null,
+            role: 'admin',
+          })
           setError(null)
           return
         }
-
-        // Determine Personal vs Team onboarding by fetching company type.
-        let companyType: AppUser['company_type'] = null
-        try {
-          const { data: companyData } = await supabase
-            .from('companies')
-            .select('type')
-            .eq('id', (data as any).company_id)
-            .single()
-          companyType = (companyData?.type ?? null) as AppUser['company_type']
-        } catch {
-          companyType = null
-        }
-
-        setAppUser({ ...(data as AppUser), company_type: companyType })
+        setAppUser(data as AppUser)
       } catch (e) {
         setAppUser(null)
         setError(e instanceof Error ? e.message : 'Failed to load user')

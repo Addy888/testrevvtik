@@ -173,15 +173,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-type Mode = "individual" | "team"
-const MODE_KEY = "mode"
+const roleToPath = (role: string) => {
+  if (role === "manager") return "/manager"
+  if (role === "salesperson") return "/personal"
+  return "/company"
+}
 
 export default function SignUpPage() {
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [mode, setMode] = useState<Mode>("individual")
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -196,12 +198,6 @@ export default function SignUpPage() {
     setMessage(null)
 
     try {
-      try {
-        localStorage.setItem(MODE_KEY, mode)
-      } catch {
-        // ignore
-      }
-
       const emailTrimmed = email.trim().toLowerCase()
 
       if (password.length < 6) {
@@ -227,23 +223,27 @@ export default function SignUpPage() {
 
       if (signUpError) throw signUpError
 
-      setMessage("Account created. Redirecting to onboarding...")
-      router.replace("/onboarding")
+      const { data: authData } = await supabase.auth.getUser()
+      const authUser = authData.user
+      if (!authUser) {
+        setMessage("Account created successfully. Please log in.")
+        router.replace("/auth/login")
+        return
+      }
+
+      const { data: appUser } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", authUser.id)
+        .maybeSingle()
+
+      router.replace(roleToPath(String(appUser?.role ?? "admin").toLowerCase()))
     } catch (err: any) {
       setError(err?.message || "Signup failed")
     } finally {
       setIsLoading(false)
     }
   }
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(MODE_KEY)
-      if (saved === "individual" || saved === "team") setMode(saved)
-    } catch {
-      // ignore
-    }
-  }, [])
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-background p-6">
@@ -268,44 +268,11 @@ export default function SignUpPage() {
           <CardHeader>
             <CardTitle className="text-2xl">Create an account</CardTitle>
             <CardDescription>
-              Choose your setup, then create your account
+              Create your account to continue
             </CardDescription>
           </CardHeader>
 
           <CardContent>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <Button
-                type="button"
-                variant={mode === "individual" ? "default" : "outline"}
-                onClick={() => {
-                  setMode("individual")
-                  try {
-                    localStorage.setItem(MODE_KEY, "individual")
-                  } catch {
-                    // ignore
-                  }
-                }}
-                disabled={isLoading}
-              >
-                Continue as Individual
-              </Button>
-              <Button
-                type="button"
-                variant={mode === "team" ? "default" : "outline"}
-                onClick={() => {
-                  setMode("team")
-                  try {
-                    localStorage.setItem(MODE_KEY, "team")
-                  } catch {
-                    // ignore
-                  }
-                }}
-                disabled={isLoading}
-              >
-                Continue as Team
-              </Button>
-            </div>
-
             <form onSubmit={handleSignUp} className="flex flex-col gap-4">
               <div className="space-y-2">
                 <Label htmlFor="fullName">Full Name (optional)</Label>

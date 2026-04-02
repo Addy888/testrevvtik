@@ -117,34 +117,32 @@ import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
 import { Eye, EyeOff } from "lucide-react"
 
-type Mode = "individual" | "team"
-const MODE_KEY = "mode"
+const roleToPath = (role: string) => {
+  if (role === "manager") return "/manager"
+  if (role === "salesperson") return "/personal"
+  return "/company"
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [mode, setMode] = useState<Mode>("individual")
   const [showPassword, setShowPassword] = useState(false)
 
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(MODE_KEY)
-      if (saved === "individual" || saved === "team") setMode(saved)
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser()
       if (data.user) {
-        router.replace("/onboarding")
+        const { data: appUser } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", data.user.id)
+          .maybeSingle()
+        router.replace(roleToPath(String(appUser?.role ?? "admin").toLowerCase()))
       }
     }
     checkUser()
@@ -157,12 +155,6 @@ export default function LoginPage() {
     const emailTrimmed = email.trim().toLowerCase()
 
     try {
-      try {
-        localStorage.setItem(MODE_KEY, mode)
-      } catch {
-        // ignore
-      }
-
       const { error: loginError } = await supabase.auth.signInWithPassword({
         email: emailTrimmed,
         password,
@@ -170,7 +162,15 @@ export default function LoginPage() {
 
       if (loginError) throw loginError
 
-      router.replace("/onboarding")
+      const { data } = await supabase.auth.getUser()
+      const authUser = data.user
+      if (!authUser) throw new Error("Login succeeded but user session not found")
+      const { data: appUser } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", authUser.id)
+        .maybeSingle()
+      router.replace(roleToPath(String(appUser?.role ?? "admin").toLowerCase()))
     } catch (err: any) {
       setError(err?.message || "Login failed")
     } finally {
@@ -201,39 +201,6 @@ export default function LoginPage() {
           </CardHeader>
 
           <CardContent>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <Button
-                type="button"
-                variant={mode === "individual" ? "default" : "outline"}
-                onClick={() => {
-                  setMode("individual")
-                  try {
-                    localStorage.setItem(MODE_KEY, "individual")
-                  } catch {
-                    // ignore
-                  }
-                }}
-                disabled={isLoading}
-              >
-                Continue as Individual
-              </Button>
-              <Button
-                type="button"
-                variant={mode === "team" ? "default" : "outline"}
-                onClick={() => {
-                  setMode("team")
-                  try {
-                    localStorage.setItem(MODE_KEY, "team")
-                  } catch {
-                    // ignore
-                  }
-                }}
-                disabled={isLoading}
-              >
-                Continue as Team
-              </Button>
-            </div>
-
             <form onSubmit={handleLogin}>
               <div className="flex flex-col gap-4">
                 <div className="space-y-2">
