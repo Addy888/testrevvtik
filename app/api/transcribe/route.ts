@@ -1,234 +1,146 @@
-import { NextResponse } from "next/server"
-import path from "node:path"
-import { createClient } from "@/lib/supabase/server"
-import { getAppUserFromSupabase } from "@/lib/supabase/getAppUser"
-
-export const runtime = "nodejs"
-
-const BUCKET = "recordings"
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-function parseSupabasePublicStorageUrl(
-  fileUrl: string
-): { objectPath: string } | null {
-  const marker = `/storage/v1/object/public/${BUCKET}/`
-  const idx = fileUrl.indexOf(marker)
-  if (idx === -1) return null
-  return { objectPath: fileUrl.slice(idx + marker.length) }
-}
-
-async function downloadRecordingBytes({
-  supabase,
-  fileUrl,
-}: {
-  supabase: any
-  fileUrl: string
-}) {
-  const fileRes = await fetch(fileUrl)
-
-  if (fileRes.ok) {
-    const arrayBuffer = await fileRes.arrayBuffer()
-    return {
-      arrayBuffer,
-      contentType:
-        fileRes.headers.get("content-type") || "application/octet-stream",
-    }
-  }
-
-  const parsed = parseSupabasePublicStorageUrl(fileUrl)
-  if (!parsed) throw new Error("File fetch failed")
-
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .download(parsed.objectPath)
-
-  if (error || !data)
-    throw new Error(error?.message || "Download failed")
-
-  const arrayBuffer = await data.arrayBuffer()
-  return { arrayBuffer, contentType: data.type || "application/octet-stream" }
-}
-
-function inferFileExt(fileUrl: string): string {
-  try {
-    const u = new URL(fileUrl)
-    return path.extname(u.pathname).toLowerCase()
-  } catch {
-    return ""
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 🔥 Deepgram via REST API (NO SDK)
-// ---------------------------------------------------------------------------
-
-async function deepgramTranscribe(
-  audioBuffer: ArrayBuffer,
-  mimeType: string
-): Promise<string> {
-  const apiKey = process.env.DEEPGRAM_API_KEY
-  if (!apiKey) throw new Error("Missing DEEPGRAM_API_KEY")
-
-  const res = await fetch(
-    "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${apiKey}`,
-        "Content-Type": mimeType,
-      },
-      body: Buffer.from(audioBuffer),
-    }
-  )
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error("Deepgram API error: " + text)
-  }
-
-  const data = await res.json()
-
-  return (
-    data?.results?.channels?.[0]?.alternatives?.[0]?.transcript || ""
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Claude cleanup
-// ---------------------------------------------------------------------------
-
-async function claudeClean(rawText: string): Promise<string> {
-  if (!rawText.trim()) return rawText
-
-  const apiKey =
-    process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || ""
-
-  if (!apiKey) return rawText
-
-  const Anthropic = (await import("@anthropic-ai/sdk")).default
-  const anthropic = new Anthropic({ apiKey })
-
-  const res = await anthropic.messages.create({
-    model: "claude-3-haiku-20240307",
-    max_tokens: 2000,
-    messages: [
-      {
-        role: "user",
-        content: `Fix grammar, punctuation. Return ONLY cleaned text.\n\n${rawText}`,
-      },
-    ],
-  })
-
-  const content = res.content[0]
-  return content?.type === "text" ? content.text : rawText
-}
-
-// ---------------------------------------------------------------------------
-// DB insert
-// ---------------------------------------------------------------------------
-
-async function insertTranscriptWithFallback({
-  supabase,
-  base,
-  transcriptText,
-}: {
-  supabase: any
-  base: Record<string, unknown>
-  transcriptText: string
-}) {
-  const fields = ["text", "content", "transcript", "transcript_text"]
-
-  for (const key of fields) {
-    const { data, error } = await supabase
-      .from("transcripts")
-      .insert({ ...base, [key]: transcriptText })
-      .select()
-      .single()
-
-    if (!error && data) return data
-  }
-
-  throw new Error("Insert failed")
-}
-
-// ---------------------------------------------------------------------------
-// API
-// ---------------------------------------------------------------------------
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
+import { generateText } from "ai"
+import { openai } from "@ai-sdk/openai"
 
 export async function POST(req: Request) {
   try {
-    const supabase = await createClient()
-    const appUser = await getAppUserFromSupabase(supabase)
+    const { recording_id } = await req.json()
 
-    const body = await req.json()
-    let recordingId = body?.recording_id
+    console.log("Recording ID received:", recording_id)
 
-    if (!recordingId && body?.file_url) {
-      const { data } = await supabase
-        .from("recordings")
-        .select("id")
-        .eq("file_url", body.file_url)
-        .limit(1)
-        .maybeSingle()
-
-      recordingId = data?.id
+    if (!recording_id || typeof recording_id !== "string" || recording_id.trim().length === 0) {
+      return Response.json({ error: "Invalid recording_id" }, { status: 400 })
     }
 
-    if (!recordingId) {
-      return NextResponse.json({ error: "Missing recording_id" }, { status: 400 })
-    }
+    const cookieStore = await cookies()
 
-    const { data: recording } = await supabase
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get: (name) => cookieStore.get(name)?.value,
+          set: () => {},
+          remove: () => {},
+        },
+      }
+    )
+
+    // ✅ Get recording
+    const { data: recording, error } = await supabase
       .from("recordings")
       .select("*")
-      .eq("id", recordingId)
+      .eq("id", recording_id)
       .single()
 
-    if (!recording) {
-      return NextResponse.json({ error: "Recording not found" }, { status: 404 })
+    if (error || !recording) {
+      return Response.json({ error: "Recording not found" }, { status: 404 })
     }
 
-    const { arrayBuffer, contentType } = await downloadRecordingBytes({
-      supabase,
-      fileUrl: recording.file_url,
-    })
+    // 🔥 Deepgram API call
+    // 🔥 Deepgram API call with Retry Logic and Optimized Settings
+    let dgRes = null;
+    let dgData = null;
+    let attempts = 0;
+    
+    while (attempts < 2) {
+      dgRes = await fetch(
+        "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&diarize=true&filler_words=false&utterances=true",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            url: recording.file_url,
+          }),
+        }
+      )
 
-    const ext = inferFileExt(recording.file_url)
-    const mime = String(contentType || "").toLowerCase()
-
-    const isValid =
-      ext === ".mp3" ||
-      ext === ".wav" ||
-      ext === ".mp4" ||
-      mime.includes("audio") ||
-      mime.includes("video")
-
-    if (!isValid) {
-      return NextResponse.json({ error: "Unsupported file" }, { status: 400 })
+      if (dgRes.ok) {
+        dgData = await dgRes.json()
+        if (dgData?.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
+          break; // success
+        }
+      }
+      
+      attempts++;
+      console.warn(`Deepgram attempt ${attempts} failed or returned empty transcript. Retrying...`);
     }
 
-    const rawText = await deepgramTranscribe(arrayBuffer, mime)
-    const finalText = await claudeClean(rawText)
+    if (!dgRes || !dgRes.ok) {
+      const errText = await dgRes?.text()
+      console.error("Deepgram Final Error:", dgRes?.status, errText)
+      return Response.json({ error: "Deepgram API failed", details: errText }, { status: 502 })
+    }
 
-    const transcript = await insertTranscriptWithFallback({
-      supabase,
-      base: {
-        user_id: recording.user_id,
-        company_id: appUser.company_id,
-        recording_id: recordingId,
-      },
-      transcriptText: finalText,
-    })
+    const utterances = dgData?.results?.utterances || []
+    let rawTranscript = ""
+    
+    if (utterances.length > 0) {
+      for (const u of utterances) {
+        rawTranscript += `Speaker ${u.speaker || 0}: ${u.transcript}\n`
+      }
+    } else {
+      // Fallback if utterances is missing for some reason
+      rawTranscript = dgData?.results?.channels?.[0]?.alternatives?.[0]?.transcript || ""
+    }
 
-    return NextResponse.json({ transcriptId: transcript.id })
-  } catch (err: any) {
-    console.error(err)
-    return NextResponse.json(
-      { error: err.message || "Failed" },
-      { status: 500 }
-    )
+    if (!rawTranscript.trim()) {
+      return Response.json({ error: "Transcript could not be extracted" }, { status: 400 })
+    }
+
+    console.log("Raw Transcript from Deepgram gathered. Cleaning up with AI...");
+    
+    // 🔥 AI CLEANUP using OpenAI (via ai SDK)
+    let cleanedText = rawTranscript;
+    try {
+      const { text } = await generateText({
+        model: openai('gpt-4o-mini'), // Excellent accuracy and fast
+        system: "You are an expert transcription editor.",
+        prompt: `Clean and correct this transcript:
+- Fix grammar and spelling
+- Remove filler words (um, uh, etc.)
+- Remove repetition and stutters
+- Make sentences read naturally while maintaining the exact original meaning
+- Retain the Speaker labels (e.g., Speaker 0:, Speaker 1:) if present.
+
+Transcript:
+${rawTranscript}`
+      });
+      cleanedText = text;
+      console.log("AI Cleanup Succesful.");
+    } catch (aiErr: any) {
+      console.error("AI Cleanup failed, falling back to raw transcript:", aiErr.message || aiErr);
+      // fallback to raw if the AI call fails, applying strict regex cleaning
+      cleanedText = rawTranscript
+        .replace(/Speaker \d+:/g, "")   // remove speaker labels
+        .replace(/\n/g, " ")            // convert new lines to space
+        .replace(/\s+/g, " ")           // remove extra spaces
+        .replace(/\s+\./g, ".")         // fix spacing before periods
+        .replace(/,\s+/g, ", ")         // fix commas
+        .trim();
+    }
+
+    console.log("FINAL TRANSCRIPT:", cleanedText)
+    console.log("RECORDING ID:", recording_id)
+
+    // ✅ Update DB
+    const { error: updateError } = await supabase
+      .from("recordings")
+      .update({ transcript: cleanedText })
+      .eq("id", recording_id)
+
+    if (updateError) {
+      console.error("DB UPDATE ERROR:", updateError)
+    }
+
+    return Response.json({ success: true, transcript: cleanedText })
+
+  } catch (err) {
+    console.error("TRANSCRIBE ERROR:", err)
+    return Response.json({ error: "Server error" }, { status: 500 })
   }
 }

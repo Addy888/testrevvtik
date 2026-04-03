@@ -1,97 +1,152 @@
-import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-import { getAppUserFromSupabase } from "@/lib/supabase/getAppUser"
-import { supabaseAdmin } from "@/lib/supabase/admin"
-
-export const runtime = "nodejs"
-
-const BUCKET = "recordings"
-
-function sanitizeFileName(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "recording"
-}
-
-async function ensureBucketExists() {
-  const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets()
-  if (listError) {
-    throw new Error(listError.message || "Failed to list storage buckets")
-  }
-
-  const exists = (buckets || []).some((b: any) => String(b?.name) === BUCKET)
-  if (exists) return
-
-  const { error: createError } = await supabaseAdmin.storage.createBucket(BUCKET, { public: true })
-  if (createError) {
-    const msg = String(createError.message || "")
-    if (!msg.toLowerCase().includes("already exists")) {
-      throw new Error(createError.message || `Failed to create bucket "${BUCKET}"`)
-    }
-  }
-}
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
 
 export async function POST(req: Request) {
   try {
-    const supabase = await createClient()
-    const appUser = await getAppUserFromSupabase(supabase)
+    const cookieStore = await cookies()
 
-    const formData = await req.formData()
-    const file = formData.get("file")
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get: (name) => cookieStore.get(name)?.value,
+          set: () => {},
+          remove: () => {},
+        },
+      }
+    )
 
-    if (!file || !(file instanceof File) || file.size === 0) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 })
+    // ✅ Auth
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    await ensureBucketExists()
-
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
-    const safeName = sanitizeFileName(file.name)
-    const storagePath = `files/${appUser.company_id}/${appUser.id}/${Date.now()}_${safeName}`
-
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(storagePath, buffer, {
-        contentType: file.type || "application/octet-stream",
-        upsert: false,
-      })
-
-    if (uploadError) {
-      return NextResponse.json(
-        { error: uploadError.message || "Failed to upload file to storage" },
-        { status: 400 }
-      )
-    }
-
-    const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(storagePath)
-    const file_url = pub.publicUrl
-
-    const { data: recording, error: insertError } = await supabase
-      .from("recordings")
-      .insert({
-        user_id: appUser.id,
-        company_id: appUser.company_id,
-        file_url,
-      })
-      .select("id, file_url")
+    const { data: appUser } = await supabase
+      .from("users")
+      .select("company_id")
+      .eq("id", user.id)
       .single()
 
-    if (insertError || !recording) {
-      return NextResponse.json(
-        { error: insertError?.message || "Failed to save recording" },
-        { status: 500 }
-      )
+    // ✅ File
+    const formData = await req.formData()
+    const file = formData.get("file") as File
+
+    if (!file) {
+      return Response.json({ error: "No file uploaded" }, { status: 400 })
     }
 
-    return NextResponse.json({
-      ok: true,
-      recordingId: (recording as any).id,
-      file_url: (recording as any).file_url,
+    // ✅ Upload
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
+    const filePath = `recordings/${Date.now()}-${sanitizedName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from("recordings")
+      .upload(filePath, file)
+
+    if (uploadError) {
+      return Response.json({ error: uploadError.message }, { status: 400 })
+    }
+
+    const { data } = supabase.storage
+      .from("recordings")
+      .getPublicUrl(filePath)
+
+    const fileUrl = data.publicUrl
+
+    // ✅ Insert DB
+    const { data: inserted, error: insertError } = await supabase
+      .from("recordings")
+      .insert({
+        user_id: user.id,
+        company_id: appUser?.company_id || null,
+        file_url: fileUrl,
+      })
+      .select()
+      .single()
+
+    if (insertError || !inserted) {
+      console.error("Insert Error:", insertError)
+      return Response.json({ error: "Failed to insert recording" }, { status: 400 })
+    }
+
+    console.log("Inserted ID:", inserted.id)
+
+    // 🔥 Call Transcribe API
+    const origin = new URL(req.url).origin;
+    
+    // Call the transcribe API and wait for it to finish so the DB is updated before we return
+    const transcribeRes = await fetch(`${origin}/api/transcribe`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "cookie": req.headers.get("cookie") || "",
+      },
+      body: JSON.stringify({
+        recording_id: inserted.id,
+      }),
     })
-  } catch (err: any) {
+
+    if (!transcribeRes.ok) {
+      console.error("Transcribe API failed:", await transcribeRes.text());
+      // We might choose to return success anyway if we are okay with manual retry later, 
+      // but let's just log it.
+    }
+
+    return Response.json({ 
+      success: true, 
+      recordingId: inserted.id,
+      file_url: fileUrl
+    })
+
+  } catch (err) {
     console.error("UPLOAD ERROR:", err)
-    return NextResponse.json(
-      { error: err?.message || "Server error during upload" },
-      { status: err?.status || 500 }
+    return Response.json({ error: "Server error" }, { status: 500 })
+  }
+}
+
+export async function GET() {
+  try {
+    const cookieStore = await cookies()
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get: (name) => cookieStore.get(name)?.value,
+          set: () => {},
+          remove: () => {},
+        },
+      }
     )
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return Response.json({ data: [] })
+    }
+
+    const { data, error } = await supabase
+      .from("recordings")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      return Response.json({ error: error.message }, { status: 400 })
+    }
+
+    return Response.json({ data })
+
+  } catch (err) {
+    console.error("GET ERROR:", err)
+    return Response.json({ error: "Server error" }, { status: 500 })
   }
 }
