@@ -76,14 +76,16 @@ export default function RecordingsPage() {
     load().catch((e) => setErrorMsg(e instanceof Error ? e.message : "Failed to load recordings"))
   }, [appUser, loading, load])
 
-  // 🔥 Auto-refresh UI (Polling)
+  // 🔥 Auto-refresh UI (Polling) — stops when nothing is actively processing
   React.useEffect(() => {
     if (!appUser || loading) return
 
-    // Ensure polling stops when transcript is available or failed
-    const pendingTranscripts = recordings.filter((r) => r.status === "processing" || r.status === "pending" || (!r.transcript && !r.status && new Date().getTime() - new Date(r.created_at).getTime() < 10000));
-    if (recordings.length > 0 && pendingTranscripts.length === 0) {
-      return // stopPolling() equivalent
+    const hasActiveJobs = recordings.some(
+      (r) => r.status === "processing" || r.status === "pending" || !r.status
+    )
+
+    if (recordings.length > 0 && !hasActiveJobs) {
+      return // All done — no need to poll
     }
 
     const interval = setInterval(() => {
@@ -259,11 +261,11 @@ export default function RecordingsPage() {
                     </TableCell>
 
                     <TableCell>
-                      {r.status === "completed" || (r.transcript && r.transcript.trim() !== "") ? (
+                      {r.status === "completed" ? (
                         <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-none">Completed</Badge>
                       ) : r.status === "processing" ? (
                         <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-none">Processing</Badge>
-                      ) : r.status === "failed" || (!r.transcript && new Date().getTime() - new Date(r.created_at).getTime() > 20000) ? (
+                      ) : r.status === "failed" ? (
                         <Badge className="bg-red-100 text-red-700 hover:bg-red-200 border-none">Failed</Badge>
                       ) : (
                         <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-200 border-none">Pending</Badge>
@@ -271,21 +273,23 @@ export default function RecordingsPage() {
                     </TableCell>
 
                     <TableCell>
-                      {r.status === "completed" || (r.transcript && r.transcript.trim() !== "") ? (
+                      {r.status === "completed" ? (
                         <div className="w-full">
-                          <textarea 
-                            readOnly 
-                            className="w-full min-h-[100px] text-sm p-3 bg-muted/30 border border-border/50 rounded-lg focus:outline-none resize-y" 
-                            value={r.transcript || ""} 
+                          <textarea
+                            readOnly
+                            className="w-full min-h-[100px] text-sm p-3 bg-muted/30 border border-border/50 rounded-lg focus:outline-none resize-y"
+                            value={r.transcript || ""}
                           />
                         </div>
-                      ) : r.status === "processing" ? (
-                        <span className="flex items-center gap-2">
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                          Processing...
+                      ) : r.status === "failed" ? (
+                        <span className="text-destructive font-medium">
+                          {r.transcript || "Transcription failed"}
                         </span>
-                      ) : r.status === "failed" || (!r.transcript && new Date().getTime() - new Date(r.created_at).getTime() > 20000) ? (
-                        <span className="text-destructive font-medium">Transcription failed</span>
+                      ) : r.status === "processing" ? (
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          Transcribing...
+                        </span>
                       ) : (
                         <span className="flex items-center gap-2 text-muted-foreground">
                           Pending...

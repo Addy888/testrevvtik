@@ -1,164 +1,190 @@
-import { createServerClient } from "@supabase/ssr"
-import { cookies } from "next/headers"
 import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
 export async function POST(req: Request) {
-  try {
-    console.log("Step 1: API hit");
-    let recording_id: string;
-    let fileData: File | null = null;
-    let fileType: string = "audio/mpeg";
+  // 🔥 USE SERVICE ROLE TO BYPASS RLS FOR ALL BACKEND UPDATES
+  const supabaseServer = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
 
-    const contentType = req.headers.get("content-type") || "";
+  let recording_id: string = ""
+
+  try {
+    console.log("=== TRANSCRIBE API HIT ===")
+    let fileData: File | null = null
+    let fileType: string = "audio/mpeg"
+
+    const contentType = req.headers.get("content-type") || ""
 
     if (contentType.includes("multipart/form-data")) {
-      console.log("Step 1.1: Parsing FormData");
-      const formData = await req.formData();
-      recording_id = formData.get("recording_id") as string;
-      const file = formData.get("file") as File;
+      console.log("Step 1: Parsing FormData")
+      const formData = await req.formData()
+      recording_id = (formData.get("recording_id") as string) || ""
+      const file = formData.get("file") as File | null
       if (file) {
-         fileData = file;
-         fileType = file.type || "audio/mpeg";
+        fileData = file
+        fileType = file.type || "audio/mpeg"
+        console.log(`Step 1.1: File received — name: ${file.name}, size: ${file.size} bytes, type: ${fileType}`)
       }
     } else {
-      console.log("Step 1.1: Parsing JSON");
-      const jsonStr = await req.json();
-      recording_id = jsonStr.recording_id;
+      console.log("Step 1: Parsing JSON body")
+      const jsonBody = await req.json()
+      recording_id = jsonBody.recording_id || ""
     }
 
-    console.log("Recording ID received:", recording_id)
+    console.log("Recording ID:", recording_id)
 
-    if (!recording_id || typeof recording_id !== "string" || recording_id.trim().length === 0) {
+    if (!recording_id || recording_id.trim().length === 0) {
       return NextResponse.json({ error: "Invalid recording_id" }, { status: 400 })
     }
 
-    // 🔥 USE SERVICE ROLE TO BYPASS RLS FOR BACKEND UPDATES
-    const supabaseServer = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-
-    // ✅ Get recording to extract database file url IF buffer not provided
-    const { data: recording, error } = await supabaseServer
+    // ── Fetch the recording row ─────────────────────────────────────────────
+    const { data: recording, error: recErr } = await supabaseServer
       .from("recordings")
       .select("*")
       .eq("id", recording_id)
       .single()
 
-    if (error || !recording) {
+    if (recErr || !recording) {
+      console.error("Recording not found:", recErr)
       return NextResponse.json({ error: "Recording not found" }, { status: 404 })
     }
 
-    console.log("Step 2: File received");
+    console.log("Step 2: Recording found — file_url:", recording.file_url)
 
-    // 🔥 Deepgram API call
-    console.log("Step 3: Sending to Deepgram");
-    let dgRes = null;
-    let dgData = null;
-    let attempts = 0;
-    
-    // Deepgram URL parameters
+    // ── Deepgram parameters ─────────────────────────────────────────────────
     const dgParams = new URLSearchParams({
-       model: "nova-2",
-       smart_format: "true",
-       punctuate: "true",
-       diarize: "true",
-       filler_words: "false",
-       utterances: "true"
-    });
+      model: "nova-2",
+      smart_format: "true",
+      punctuate: "true",
+      diarize: "true",
+      filler_words: "false",
+      utterances: "true",
+    })
+    const dgUrl = `https://api.deepgram.com/v1/listen?${dgParams.toString()}`
 
-    const dgUrl = `https://api.deepgram.com/v1/listen?${dgParams.toString()}`;
+    // ── Send to Deepgram (up to 2 attempts) ─────────────────────────────────
+    let dgRes: Response | null = null
+    let dgData: any = null
 
-    while (attempts < 2) {
-      if (fileData) {
-        // Send file buffer directly
-        dgRes = await fetch(dgUrl, {
-          method: "POST",
-          headers: {
-            Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
-            "Content-Type": fileType,
-          },
-          body: fileData,
-        })
-      } else {
-        // Send URL to Deepgram
-        dgRes = await fetch(dgUrl, {
-          method: "POST",
-          headers: {
-            Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            url: recording.file_url,
-          }),
-        })
-      }
-
-      if (dgRes.ok) {
-        dgData = await dgRes.json()
-        if (dgData?.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
-          break; // success
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      console.log(`Step 3: Deepgram attempt ${attempt}`)
+      try {
+        if (fileData) {
+          dgRes = await fetch(dgUrl, {
+            method: "POST",
+            headers: {
+              Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+              "Content-Type": fileType,
+            },
+            body: fileData,
+          })
+        } else {
+          // No file buffer — send the file_url to Deepgram
+          dgRes = await fetch(dgUrl, {
+            method: "POST",
+            headers: {
+              Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ url: recording.file_url }),
+          })
         }
+
+        if (dgRes.ok) {
+          dgData = await dgRes.json()
+          console.log("Step 3: Deepgram responded OK")
+          break // success — exit retry loop
+        }
+
+        const errBody = await dgRes.text()
+        console.warn(`Step 3: Deepgram attempt ${attempt} failed — HTTP ${dgRes.status}: ${errBody}`)
+
+      } catch (fetchErr) {
+        console.error(`Step 3: Deepgram fetch threw on attempt ${attempt}:`, fetchErr)
       }
-      
-      attempts++;
-      console.warn(`Deepgram attempt ${attempts} failed or returned empty transcript. Retrying...`);
     }
 
-    if (!dgRes || !dgRes.ok) {
-      const errText = await dgRes?.text()
-      console.error("Deepgram Final Error:", dgRes?.status, errText)
-      
-      // Mark recording as failed
-      await supabaseServer.from("recordings").update({ status: 'failed' }).eq("id", recording_id);
-
-      return NextResponse.json({ error: "Deepgram API failed", details: errText }, { status: 502 })
+    // ── Hard failure: Deepgram never responded OK ───────────────────────────
+    if (!dgRes || !dgRes.ok || !dgData) {
+      console.error("Deepgram: all attempts failed — marking recording as failed")
+      await supabaseServer
+        .from("recordings")
+        .update({ status: "failed", transcript: "Error during transcription" })
+        .eq("id", recording_id)
+      return NextResponse.json({ error: "Deepgram API failed after retries" }, { status: 502 })
     }
 
-    const result = dgData;
-    console.log("Step 4: Deepgram response:", result);
+    // ── Parse transcript ─────────────────────────────────────────────────────
+    const rawTranscript: string =
+      dgData?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? ""
 
-    const transcript = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
-    
-    if (!transcript || transcript.trim() === "") {
-      await supabaseServer.from("recordings").update({ status: 'failed' }).eq("id", recording_id);
-      return NextResponse.json({ error: "Transcript could not be extracted or is empty" }, { status: 400 })
+    const duration: number = dgData?.metadata?.duration ?? 0
+    console.log("Audio duration (seconds):", duration)
+    console.log("Raw transcript:", rawTranscript)
+
+    // ── Decide final transcript text ─────────────────────────────────────────
+    let finalTranscript: string
+
+    if (duration > 0 && duration < 2) {
+      // Very short audio — not worth transcribing
+      console.log("Audio too short (< 2s) — marking as no meaningful audio")
+      finalTranscript = "No meaningful audio detected (recording too short)"
+    } else if (!rawTranscript || rawTranscript.trim() === "") {
+      // Deepgram returned OK but found no speech — don't fail, just note it
+      console.log("Deepgram returned empty transcript — treating as silent audio")
+      finalTranscript = "No speech detected in audio"
+    } else {
+      finalTranscript = rawTranscript.trim()
+      console.log(`Transcript extracted — length: ${finalTranscript.length} characters`)
     }
 
-    console.log("Step 5: Saving to DB");
-    console.log("Saving transcript...");
-    console.log("Transcript:", transcript);
-
-    // ✅ Update DB with Service Role
-    const { data, error: updateError } = await supabaseServer
+    // ── Save transcript to transcripts table ─────────────────────────────────
+    console.log("Step 5: Saving transcript to DB")
+    const { error: insertErr } = await supabaseServer
       .from("transcripts")
       .insert([
         {
-          recording_id: recording_id,
+          recording_id,
           company_id: recording.company_id,
-          text: transcript,
-        }
+          text: finalTranscript,
+        },
       ])
 
-    console.log("DB insert result:", data, updateError)
-
-    if (updateError) {
-      console.error("DB Insert Error:", updateError);
-      await supabaseServer.from("recordings").update({ status: 'failed' }).eq("id", recording_id);
-      return NextResponse.json({ error: "Database insert failed" }, { status: 500 });
+    if (insertErr) {
+      console.error("DB Insert Error (transcripts):", insertErr)
+      await supabaseServer
+        .from("recordings")
+        .update({ status: "failed", transcript: "Error during transcription" })
+        .eq("id", recording_id)
+      return NextResponse.json({ error: "Database insert failed" }, { status: 500 })
     }
 
-    // Ensure we update recordings transcript as well to maintain frontend fallback compat
+    // ── Update recordings row with final status ───────────────────────────────
     await supabaseServer
       .from("recordings")
-      .update({ transcript: transcript, status: 'completed' })
+      .update({ transcript: finalTranscript, status: "completed" })
       .eq("id", recording_id)
 
-    return NextResponse.json({ success: true, transcription: transcript })
+    console.log(`=== TRANSCRIPTION COMPLETE for recording ${recording_id} ===`)
+    return NextResponse.json({ success: true, transcription: finalTranscript })
 
   } catch (err) {
-    console.error("TRANSCRIBE ERROR:", err)
-    return NextResponse.json({ error: "Server error" }, { status: 500 })
+    // ── Unexpected error — mark as failed with message ────────────────────────
+    console.error("TRANSCRIBE UNHANDLED ERROR:", err)
+
+    if (recording_id) {
+      try {
+        await supabaseServer
+          .from("recordings")
+          .update({ status: "failed", transcript: "Error during transcription" })
+          .eq("id", recording_id)
+      } catch (dbErr) {
+        console.error("Failed to update recording status after error:", dbErr)
+      }
+    }
+
+    return NextResponse.json({ error: "Server error during transcription" }, { status: 500 })
   }
 }
