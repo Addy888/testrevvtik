@@ -80,8 +80,8 @@ export default function RecordingsPage() {
   React.useEffect(() => {
     if (!appUser || loading) return
 
-    // Ensure polling stops when transcript is available
-    const pendingTranscripts = recordings.filter((r) => !r.transcript || Boolean(r.transcript) === false);
+    // Ensure polling stops when transcript is available or failed
+    const pendingTranscripts = recordings.filter((r) => r.status === "processing" || r.status === "pending" || (!r.transcript && !r.status && new Date().getTime() - new Date(r.created_at).getTime() < 10000));
     if (recordings.length > 0 && pendingTranscripts.length === 0) {
       return // stopPolling() equivalent
     }
@@ -231,6 +231,8 @@ export default function RecordingsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Audio</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Transcript</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>Score</TableHead>
@@ -249,28 +251,52 @@ export default function RecordingsPage() {
                     </TableCell>
 
                     <TableCell>
-                      {r.transcript && r.transcript.trim() !== "" ? (
+                      {r.source === "zoom" ? (
+                        <Badge variant="outline" className="text-blue-500 border-blue-200 bg-blue-50">Zoom</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-gray-500 border-gray-200">Upload</Badge>
+                      )}
+                    </TableCell>
+
+                    <TableCell>
+                      {r.status === "completed" || (r.transcript && r.transcript.trim() !== "") ? (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-none">Completed</Badge>
+                      ) : r.status === "processing" ? (
+                        <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-none">Processing</Badge>
+                      ) : r.status === "failed" || (!r.transcript && new Date().getTime() - new Date(r.created_at).getTime() > 20000) ? (
+                        <Badge className="bg-red-100 text-red-700 hover:bg-red-200 border-none">Failed</Badge>
+                      ) : (
+                        <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-200 border-none">Pending</Badge>
+                      )}
+                    </TableCell>
+
+                    <TableCell>
+                      {r.status === "completed" || (r.transcript && r.transcript.trim() !== "") ? (
                         <div className="w-full">
                           <textarea 
                             readOnly 
                             className="w-full min-h-[100px] text-sm p-3 bg-muted/30 border border-border/50 rounded-lg focus:outline-none resize-y" 
-                            value={r.transcript} 
+                            value={r.transcript || ""} 
                           />
                         </div>
-                      ) : new Date().getTime() - new Date(r.created_at).getTime() > 10000 ? (
-                        <span className="text-destructive font-medium">Transcription failed</span>
-                      ) : (
+                      ) : r.status === "processing" ? (
                         <span className="flex items-center gap-2">
                           <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                          Transcribing...
+                          Processing...
+                        </span>
+                      ) : r.status === "failed" || (!r.transcript && new Date().getTime() - new Date(r.created_at).getTime() > 20000) ? (
+                        <span className="text-destructive font-medium">Transcription failed</span>
+                      ) : (
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                          Pending...
                         </span>
                       )}
                     </TableCell>
 
                     <TableCell>
-                      {r.transcript && r.transcript.trim() !== "" && (
+                      {(r.status === "completed" || (r.transcript && r.transcript.trim() !== "")) && (
                         <Button variant="outline" size="sm" onClick={() => downloadTextFile(r.transcript)}>
-                          Download Transcript
+                          Download .txt file
                         </Button>
                       )}
                     </TableCell>

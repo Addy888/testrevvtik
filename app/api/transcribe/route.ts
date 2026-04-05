@@ -1,16 +1,36 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { createClient } from "@supabase/supabase-js"
+import { NextResponse } from "next/server"
 
 export async function POST(req: Request) {
   try {
     console.log("Step 1: API hit");
-    const { recording_id } = await req.json()
+    let recording_id: string;
+    let fileData: File | null = null;
+    let fileType: string = "audio/mpeg";
+
+    const contentType = req.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      console.log("Step 1.1: Parsing FormData");
+      const formData = await req.formData();
+      recording_id = formData.get("recording_id") as string;
+      const file = formData.get("file") as File;
+      if (file) {
+         fileData = file;
+         fileType = file.type || "audio/mpeg";
+      }
+    } else {
+      console.log("Step 1.1: Parsing JSON");
+      const jsonStr = await req.json();
+      recording_id = jsonStr.recording_id;
+    }
 
     console.log("Recording ID received:", recording_id)
 
     if (!recording_id || typeof recording_id !== "string" || recording_id.trim().length === 0) {
-      return Response.json({ error: "Invalid recording_id" }, { status: 400 })
+      return NextResponse.json({ error: "Invalid recording_id" }, { status: 400 })
     }
 
     // 🔥 USE SERVICE ROLE TO BYPASS RLS FOR BACKEND UPDATES
@@ -19,7 +39,7 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // ✅ Get recording
+    // ✅ Get recording to extract database file url IF buffer not provided
     const { data: recording, error } = await supabaseServer
       .from("recordings")
       .select("*")
@@ -27,7 +47,7 @@ export async function POST(req: Request) {
       .single()
 
     if (error || !recording) {
-      return Response.json({ error: "Recording not found" }, { status: 404 })
+      return NextResponse.json({ error: "Recording not found" }, { status: 404 })
     }
 
     console.log("Step 2: File received");
@@ -38,10 +58,32 @@ export async function POST(req: Request) {
     let dgData = null;
     let attempts = 0;
     
+    // Deepgram URL parameters
+    const dgParams = new URLSearchParams({
+       model: "nova-2",
+       smart_format: "true",
+       punctuate: "true",
+       diarize: "true",
+       filler_words: "false",
+       utterances: "true"
+    });
+
+    const dgUrl = `https://api.deepgram.com/v1/listen?${dgParams.toString()}`;
+
     while (attempts < 2) {
-      dgRes = await fetch(
-        "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&diarize=true&filler_words=false&utterances=true",
-        {
+      if (fileData) {
+        // Send file buffer directly
+        dgRes = await fetch(dgUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+            "Content-Type": fileType,
+          },
+          body: fileData,
+        })
+      } else {
+        // Send URL to Deepgram
+        dgRes = await fetch(dgUrl, {
           method: "POST",
           headers: {
             Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -50,8 +92,8 @@ export async function POST(req: Request) {
           body: JSON.stringify({
             url: recording.file_url,
           }),
-        }
-      )
+        })
+      }
 
       if (dgRes.ok) {
         dgData = await dgRes.json()
@@ -67,7 +109,11 @@ export async function POST(req: Request) {
     if (!dgRes || !dgRes.ok) {
       const errText = await dgRes?.text()
       console.error("Deepgram Final Error:", dgRes?.status, errText)
-      return Response.json({ error: "Deepgram API failed", details: errText }, { status: 502 })
+      
+      // Mark recording as failed
+      await supabaseServer.from("recordings").update({ status: 'failed' }).eq("id", recording_id);
+
+      return NextResponse.json({ error: "Deepgram API failed", details: errText }, { status: 502 })
     }
 
     const result = dgData;
@@ -76,7 +122,8 @@ export async function POST(req: Request) {
     const transcript = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
     
     if (!transcript || transcript.trim() === "") {
-      return Response.json({ error: "Transcript could not be extracted or is empty" }, { status: 400 })
+      await supabaseServer.from("recordings").update({ status: 'failed' }).eq("id", recording_id);
+      return NextResponse.json({ error: "Transcript could not be extracted or is empty" }, { status: 400 })
     }
 
     console.log("Step 5: Saving to DB");
@@ -98,19 +145,20 @@ export async function POST(req: Request) {
 
     if (updateError) {
       console.error("DB Insert Error:", updateError);
-      return Response.json({ error: "Database insert failed" }, { status: 500 });
+      await supabaseServer.from("recordings").update({ status: 'failed' }).eq("id", recording_id);
+      return NextResponse.json({ error: "Database insert failed" }, { status: 500 });
     }
 
     // Ensure we update recordings transcript as well to maintain frontend fallback compat
     await supabaseServer
       .from("recordings")
-      .update({ transcript: transcript })
+      .update({ transcript: transcript, status: 'completed' })
       .eq("id", recording_id)
 
-    return Response.json({ success: true, transcription: transcript })
+    return NextResponse.json({ success: true, transcription: transcript })
 
   } catch (err) {
     console.error("TRANSCRIBE ERROR:", err)
-    return Response.json({ error: "Server error" }, { status: 500 })
+    return NextResponse.json({ error: "Server error" }, { status: 500 })
   }
 }

@@ -30,7 +30,7 @@ export function useAppUser() {
 
         const { data, error: usersError } = await supabase
           .from('users')
-          .select('id, email, role')
+          .select('id, email, role, company_id')
           .eq('id', user.id)
           .maybeSingle()
 
@@ -43,6 +43,7 @@ export function useAppUser() {
             id: user.id,
             email: user.email ?? null,
             role: 'admin',
+            company_id: null,
           })
           setError(null)
           return

@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
     let recordingsQuery = supabase
       .from("recordings")
-      .select("id, file_url, transcript, created_at, company_id, user_id")
+      .select("id, file_url, transcript, status, source, external_id, created_at, company_id, user_id")
       .order("created_at", { ascending: false })
 
     if (companyId) {
