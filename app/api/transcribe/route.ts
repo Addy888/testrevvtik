@@ -1,10 +1,10 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
-import { generateText } from "ai"
-import { openai } from "@ai-sdk/openai"
+import { createClient } from "@supabase/supabase-js"
 
 export async function POST(req: Request) {
   try {
+    console.log("Step 1: API hit");
     const { recording_id } = await req.json()
 
     console.log("Recording ID received:", recording_id)
@@ -13,22 +13,14 @@ export async function POST(req: Request) {
       return Response.json({ error: "Invalid recording_id" }, { status: 400 })
     }
 
-    const cookieStore = await cookies()
-
-    const supabase = createServerClient(
+    // 🔥 USE SERVICE ROLE TO BYPASS RLS FOR BACKEND UPDATES
+    const supabaseServer = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get: (name) => cookieStore.get(name)?.value,
-          set: () => {},
-          remove: () => {},
-        },
-      }
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
     // ✅ Get recording
-    const { data: recording, error } = await supabase
+    const { data: recording, error } = await supabaseServer
       .from("recordings")
       .select("*")
       .eq("id", recording_id)
@@ -38,8 +30,10 @@ export async function POST(req: Request) {
       return Response.json({ error: "Recording not found" }, { status: 404 })
     }
 
+    console.log("Step 2: File received");
+
     // 🔥 Deepgram API call
-    // 🔥 Deepgram API call with Retry Logic and Optimized Settings
+    console.log("Step 3: Sending to Deepgram");
     let dgRes = null;
     let dgData = null;
     let attempts = 0;
@@ -76,68 +70,44 @@ export async function POST(req: Request) {
       return Response.json({ error: "Deepgram API failed", details: errText }, { status: 502 })
     }
 
-    const utterances = dgData?.results?.utterances || []
-    let rawTranscript = ""
+    const result = dgData;
+    console.log("Step 4: Deepgram response:", result);
+
+    const transcript = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
     
-    if (utterances.length > 0) {
-      for (const u of utterances) {
-        rawTranscript += `Speaker ${u.speaker || 0}: ${u.transcript}\n`
-      }
-    } else {
-      // Fallback if utterances is missing for some reason
-      rawTranscript = dgData?.results?.channels?.[0]?.alternatives?.[0]?.transcript || ""
+    if (!transcript || transcript.trim() === "") {
+      return Response.json({ error: "Transcript could not be extracted or is empty" }, { status: 400 })
     }
 
-    if (!rawTranscript.trim()) {
-      return Response.json({ error: "Transcript could not be extracted" }, { status: 400 })
-    }
+    console.log("Step 5: Saving to DB");
+    console.log("Saving transcript...");
+    console.log("Transcript:", transcript);
 
-    console.log("Raw Transcript from Deepgram gathered. Cleaning up with AI...");
-    
-    // 🔥 AI CLEANUP using OpenAI (via ai SDK)
-    let cleanedText = rawTranscript;
-    try {
-      const { text } = await generateText({
-        model: openai('gpt-4o-mini'), // Excellent accuracy and fast
-        system: "You are an expert transcription editor.",
-        prompt: `Clean and correct this transcript:
-- Fix grammar and spelling
-- Remove filler words (um, uh, etc.)
-- Remove repetition and stutters
-- Make sentences read naturally while maintaining the exact original meaning
-- Retain the Speaker labels (e.g., Speaker 0:, Speaker 1:) if present.
+    // ✅ Update DB with Service Role
+    const { data, error: updateError } = await supabaseServer
+      .from("transcripts")
+      .insert([
+        {
+          recording_id: recording_id,
+          company_id: recording.company_id,
+          text: transcript,
+        }
+      ])
 
-Transcript:
-${rawTranscript}`
-      });
-      cleanedText = text;
-      console.log("AI Cleanup Succesful.");
-    } catch (aiErr: any) {
-      console.error("AI Cleanup failed, falling back to raw transcript:", aiErr.message || aiErr);
-      // fallback to raw if the AI call fails, applying strict regex cleaning
-      cleanedText = rawTranscript
-        .replace(/Speaker \d+:/g, "")   // remove speaker labels
-        .replace(/\n/g, " ")            // convert new lines to space
-        .replace(/\s+/g, " ")           // remove extra spaces
-        .replace(/\s+\./g, ".")         // fix spacing before periods
-        .replace(/,\s+/g, ", ")         // fix commas
-        .trim();
-    }
-
-    console.log("FINAL TRANSCRIPT:", cleanedText)
-    console.log("RECORDING ID:", recording_id)
-
-    // ✅ Update DB
-    const { error: updateError } = await supabase
-      .from("recordings")
-      .update({ transcript: cleanedText })
-      .eq("id", recording_id)
+    console.log("DB insert result:", data, updateError)
 
     if (updateError) {
-      console.error("DB UPDATE ERROR:", updateError)
+      console.error("DB Insert Error:", updateError);
+      return Response.json({ error: "Database insert failed" }, { status: 500 });
     }
 
-    return Response.json({ success: true, transcript: cleanedText })
+    // Ensure we update recordings transcript as well to maintain frontend fallback compat
+    await supabaseServer
+      .from("recordings")
+      .update({ transcript: transcript })
+      .eq("id", recording_id)
+
+    return Response.json({ success: true, transcription: transcript })
 
   } catch (err) {
     console.error("TRANSCRIBE ERROR:", err)

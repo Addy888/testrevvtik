@@ -80,6 +80,7 @@ export async function POST(req: Request) {
     const origin = new URL(req.url).origin;
     
     // Call the transcribe API and wait for it to finish so the DB is updated before we return
+    let transcriptText = null;
     const transcribeRes = await fetch(`${origin}/api/transcribe`, {
       method: "POST",
       headers: {
@@ -95,12 +96,16 @@ export async function POST(req: Request) {
       console.error("Transcribe API failed:", await transcribeRes.text());
       // We might choose to return success anyway if we are okay with manual retry later, 
       // but let's just log it.
+    } else {
+      const transcribeData = await transcribeRes.json();
+      transcriptText = transcribeData.transcription || null;
     }
 
     return Response.json({ 
       success: true, 
       recordingId: inserted.id,
-      file_url: fileUrl
+      file_url: fileUrl,
+      transcript: transcriptText
     })
 
   } catch (err) {

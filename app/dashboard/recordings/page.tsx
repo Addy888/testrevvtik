@@ -41,107 +41,34 @@ export default function RecordingsPage() {
   const load = React.useCallback(async () => {
     if (!appUser) return
 
-    const companyId = appUser.company_id
-
     try {
-      // 🔵 1. Fetch Recordings Safe (Allowing null company states to load data)
-      let recordingsQuery: any = supabase
-        .from("recordings")
-        .select("*")
-        .order("created_at", { ascending: false })
+      const params = new URLSearchParams()
+      if (appUser.company_id) params.append("companyId", appUser.company_id)
+      if (appUser.id) params.append("userId", appUser.id)
+      if (appUser.role) params.append("role", appUser.role)
+      params.append("ts", Date.now().toString())
 
-      if (companyId && typeof companyId === "string" && companyId !== "undefined") {
-        recordingsQuery = recordingsQuery.eq("company_id", companyId)
-      }
-      recordingsQuery = applyRoleEq(recordingsQuery)
-
-      const { data: recs, error: recErr } = await recordingsQuery
-      if (recErr) throw recErr
-
-      // 🛡️ 3. Safe ID Extraction
-      const recordingIds = (recs || [])
-        .map((r: any) => r.id)
-        .filter((id: any) => typeof id === "string" && id.trim().length > 0 && id !== "undefined")
-
-      console.log("recordingIds:", recordingIds)
-
-      let transcriptsData: any[] = []
-      let analysisData: any[] = []
-      let scoresData: any[] = []
-
-      // 🛡️ 4. Safe Transcripts Fetch
-      if (recordingIds.length > 0) {
-        let transcriptsQuery: any = supabase.from("transcripts").select("*")
-        if (companyId && typeof companyId === "string" && companyId !== "undefined") {
-          transcriptsQuery = transcriptsQuery.eq("company_id", companyId)
-        }
-        transcriptsQuery = applyRoleEq(transcriptsQuery)
-        transcriptsQuery = transcriptsQuery.in("recording_id", recordingIds)
-
-        const { data: trans, error: transErr } = await transcriptsQuery
-        if (transErr) throw transErr
-
-        transcriptsData = trans || []
-
-        // 🛡️ 5. Next Safe Extraction Phase (Transcripts -> Analysis)
-        const transcriptIds = transcriptsData
-          .map((t: any) => t.id)
-          .filter((id: any) => typeof id === "string" && id.trim().length > 0 && id !== "undefined")
-
-        console.log("transcriptIds:", transcriptIds)
-
-        if (transcriptIds.length > 0) {
-          let analysisQuery: any = supabase.from("analysis").select("*")
-          if (companyId && typeof companyId === "string" && companyId !== "undefined") {
-            analysisQuery = analysisQuery.eq("company_id", companyId)
-          }
-          analysisQuery = applyRoleEq(analysisQuery)
-
-          // Link analysis explicitly to transcript_id
-          analysisQuery = analysisQuery.in("transcript_id", transcriptIds)
-
-          const { data: an, error: anErr } = await analysisQuery
-          if (anErr) throw anErr
-
-          analysisData = an || []
-
-          // 🛡️ 6. Next Safe Extraction Phase (Analysis -> Scores)
-          const analysisIds = analysisData
-            .map((a: any) => a.id)
-            .filter((id: any) => typeof id === "string" && id.trim().length > 0 && id !== "undefined")
-
-          console.log("analysisIds:", analysisIds)
-
-          if (analysisIds.length > 0) {
-            let scoresQuery: any = supabase.from("scores").select("*")
-            if (companyId && typeof companyId === "string" && companyId !== "undefined") {
-              scoresQuery = scoresQuery.eq("company_id", companyId)
-            }
-            scoresQuery = applyRoleEq(scoresQuery)
-
-            // Execute safely
-            scoresQuery = scoresQuery.in("analysis_id", analysisIds)
-
-            const { data: sc, error: scErr } = await scoresQuery
-            if (scErr) throw scErr
-
-            scoresData = sc || []
-          }
-        }
+      const res = await fetch(`/api/recordings?${params.toString()}`)
+      
+      if (!res.ok) {
+        throw new Error("Failed to fetch recordings")
       }
 
-      setRecordings(recs || [])
-      setTranscripts(transcriptsData)
-      setAnalyses(analysisData)
-      setScores(scoresData)
+      const data = await res.json()
+      console.log("FETCHED DATA:", data)
 
-      console.log("UI RECORDINGS:", recs || [])
+      setRecordings([...(data.recordings || [])])
+      setTranscripts([...(data.transcripts || [])])
+      setAnalyses([...(data.analyses || [])])
+      setScores([...(data.scores || [])])
+      
+      console.log("FRONTEND RECORDINGS:", data.recordings || [])
 
     } catch (err: any) {
-      console.error("Load safe query error:", err)
+      console.error("LOAD ERROR:", err)
       setErrorMsg(err?.message || "Data failed to load safely.")
     }
-  }, [appUser, applyRoleEq, refreshTick])
+  }, [appUser, refreshTick])
 
   React.useEffect(() => {
     if (!appUser || loading) return
@@ -153,12 +80,18 @@ export default function RecordingsPage() {
   React.useEffect(() => {
     if (!appUser || loading) return
 
+    // Ensure polling stops when transcript is available
+    const pendingTranscripts = recordings.filter((r) => !r.transcript || Boolean(r.transcript) === false);
+    if (recordings.length > 0 && pendingTranscripts.length === 0) {
+      return // stopPolling() equivalent
+    }
+
     const interval = setInterval(() => {
       load()
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [appUser, loading, load])
+  }, [appUser, loading, load, recordings])
 
   const analysesByRecording = React.useMemo(() => {
     const map = new Map<string, any>()
@@ -186,17 +119,19 @@ export default function RecordingsPage() {
           ? s.average
           : null
 
-  const downloadTranscript = (text: string) => {
+  const downloadTextFile = (text: string) => {
     if (!text) return
     const blob = new Blob([text], { type: "text/plain" })
-    const url = URL.createObjectURL(blob)
+    const url = window.URL.createObjectURL(blob)
 
     const a = document.createElement("a")
     a.href = url
-    a.download = "transcript.txt"
+    a.download = "transcription.txt"
+    document.body.appendChild(a)
     a.click()
-
-    URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+    
+    window.URL.revokeObjectURL(url)
   }
 
   const handleUpload = async () => {
@@ -204,8 +139,16 @@ export default function RecordingsPage() {
     setErrorMsg(null)
 
     setBusyAction("upload")
+    
+    // Stop infinite loading: timeout fallback
+    const timeoutFallback = setTimeout(() => {
+      setBusyAction(null)
+      setErrorMsg("Transcription timed out (10s)")
+    }, 10000)
+
     try {
       if (!fileInput) {
+        clearTimeout(timeoutFallback)
         setErrorMsg("Choose a file to upload")
         return
       }
@@ -218,11 +161,32 @@ export default function RecordingsPage() {
         body: fd,
       })
 
+      clearTimeout(timeoutFallback)
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || "Upload failed")
+      
+      // Add error handling constraint
+      if (!res.ok || !data.success) {
+        setBusyAction(null)
+        setErrorMsg("Transcription failed")
+        throw new Error(data?.error || "Upload failed")
+      }
 
       setFileUrl("")
       setFileInput(null)
+      
+      // After API call:
+      setRecordings((prev) => {
+        const newRec = {
+          id: data.recordingId,
+          file_url: data.file_url,
+          transcript: data.transcript || null,
+          created_at: new Date().toISOString()
+        }
+        if (prev.some(p => p.id === newRec.id)) return prev
+        return [newRec, ...prev]
+      })
+      setBusyAction(null) // Equivalent to setLoading(false)
+
       setRefreshTick((t) => t + 1)
 
       // 🔥 Force refresh after upload allows backend buffer time
@@ -230,9 +194,9 @@ export default function RecordingsPage() {
         load()
       }, 2000)
     } catch (e: any) {
-      setErrorMsg(e?.message || "Upload failed")
-    } finally {
+      clearTimeout(timeoutFallback)
       setBusyAction(null)
+      setErrorMsg(e?.message || "Upload failed")
     }
   }
 
@@ -247,12 +211,14 @@ export default function RecordingsPage() {
         <CardHeader>
           <CardTitle>Upload</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Input type="file" onChange={(e) => setFileInput(e.target.files?.[0] ?? null)} />
-          <Button onClick={handleUpload} disabled={busyAction === "upload"}>
-            Upload
-          </Button>
-          {errorMsg && <p>{errorMsg}</p>}
+        <CardContent className="space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <Input type="file" onChange={(e) => setFileInput(e.target.files?.[0] ?? null)} className="max-w-sm" />
+            <Button onClick={handleUpload} disabled={busyAction === "upload"}>
+              {busyAction === "upload" ? "Uploading & Transcribing..." : "Upload"}
+            </Button>
+          </div>
+          {errorMsg && <p className="text-sm text-destructive font-medium">{errorMsg}</p>}
         </CardContent>
       </Card>
 
@@ -283,8 +249,16 @@ export default function RecordingsPage() {
                     </TableCell>
 
                     <TableCell>
-                      {r.transcript && r.transcript.length > 5 ? (
-                        <p className="text-sm whitespace-pre-wrap leading-relaxed">{r.transcript}</p>
+                      {r.transcript && r.transcript.trim() !== "" ? (
+                        <div className="w-full">
+                          <textarea 
+                            readOnly 
+                            className="w-full min-h-[100px] text-sm p-3 bg-muted/30 border border-border/50 rounded-lg focus:outline-none resize-y" 
+                            value={r.transcript} 
+                          />
+                        </div>
+                      ) : new Date().getTime() - new Date(r.created_at).getTime() > 10000 ? (
+                        <span className="text-destructive font-medium">Transcription failed</span>
                       ) : (
                         <span className="flex items-center gap-2">
                           <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -294,9 +268,9 @@ export default function RecordingsPage() {
                     </TableCell>
 
                     <TableCell>
-                      {r.transcript && r.transcript.length > 5 && (
-                        <Button variant="outline" size="sm" onClick={() => downloadTranscript(r.transcript)}>
-                          Download
+                      {r.transcript && r.transcript.trim() !== "" && (
+                        <Button variant="outline" size="sm" onClick={() => downloadTextFile(r.transcript)}>
+                          Download Transcript
                         </Button>
                       )}
                     </TableCell>
