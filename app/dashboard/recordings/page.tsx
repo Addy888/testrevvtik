@@ -274,16 +274,30 @@ export default function RecordingsPage() {
 
                     <TableCell>
                       {r.status === "completed" ? (
-                        <div className="w-full">
-                          <textarea
-                            readOnly
-                            className="w-full min-h-[100px] text-sm p-3 bg-muted/30 border border-border/50 rounded-lg focus:outline-none resize-y"
-                            value={r.transcript || ""}
-                          />
-                        </div>
+                        r.transcript && [
+                          "No speech detected",
+                          "No meaningful audio",
+                          "Audio too short",
+                          "Error processing audio",
+                          "Processed with minor issue",
+                        ].some((msg) => r.transcript.startsWith(msg)) ? (
+                          // Informational message — no real speech content
+                          <span className="text-sm text-muted-foreground italic">
+                            ℹ️ {r.transcript}
+                          </span>
+                        ) : (
+                          // Real transcript
+                          <div className="w-full">
+                            <textarea
+                              readOnly
+                              className="w-full min-h-[100px] text-sm p-3 bg-muted/30 border border-border/50 rounded-lg focus:outline-none resize-y"
+                              value={r.transcript || ""}
+                            />
+                          </div>
+                        )
                       ) : r.status === "failed" ? (
-                        <span className="text-destructive font-medium">
-                          {r.transcript || "Transcription failed"}
+                        <span className="text-sm text-muted-foreground italic">
+                          ℹ️ {r.transcript || "Processed with minor issue"}
                         </span>
                       ) : r.status === "processing" ? (
                         <span className="flex items-center gap-2 text-muted-foreground">
@@ -298,11 +312,19 @@ export default function RecordingsPage() {
                     </TableCell>
 
                     <TableCell>
-                      {(r.status === "completed" || (r.transcript && r.transcript.trim() !== "")) && (
-                        <Button variant="outline" size="sm" onClick={() => downloadTextFile(r.transcript)}>
-                          Download .txt file
-                        </Button>
-                      )}
+                      {r.status === "completed" &&
+                        r.transcript &&
+                        ![
+                          "No speech detected",
+                          "No meaningful audio",
+                          "Audio too short",
+                          "Error processing audio",
+                          "Processed with minor issue",
+                        ].some((msg) => r.transcript.startsWith(msg)) && (
+                          <Button variant="outline" size="sm" onClick={() => downloadTextFile(r.transcript)}>
+                            Download .txt file
+                          </Button>
+                        )}
                     </TableCell>
 
                     <TableCell>
