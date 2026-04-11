@@ -58,7 +58,7 @@ export async function POST(req: Request) {
       .eq("id", transcript_id)
       .eq("company_id", appUser.company_id)
 
-    if (appUser.role === "salesperson") {
+    if (appUser.role === "EMPLOYEE") {
       transcriptQuery = transcriptQuery.eq("user_id", appUser.id)
     }
 

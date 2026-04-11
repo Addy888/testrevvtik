@@ -9,13 +9,10 @@ export async function POST(req: Request) {
     const supabase = await createClient()
     const appUser = await getAppUserFromSupabase(supabase)
 
-    if (appUser.role !== "manager" && appUser.role !== "admin") {
+    if (appUser.role !== "MANAGER" && appUser.role !== "SUPER_ADMIN" && appUser.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    if (String(appUser.company_type ?? "").toLowerCase() === "personal") {
-      return NextResponse.json({ error: "Personal plan does not support manager features" }, { status: 403 })
-    }
 
     const body = await req.json()
     const employeeUserId = body?.employee_user_id as string | undefined
@@ -24,11 +21,12 @@ export async function POST(req: Request) {
     }
 
     const { data: employee, error: employeeError } = await supabase
-      .from("users")
+      .from("app_users")
       .select("id, company_id, role, manager_id")
       .eq("id", employeeUserId)
       .eq("company_id", appUser.company_id)
       .is("manager_id", null)
+      .neq("role", "MANAGER")
       .neq("role", "manager")
       .single()
 
@@ -37,9 +35,9 @@ export async function POST(req: Request) {
     }
 
     const { error: updateError } = await supabase
-      .from("users")
+      .from("app_users")
       .update({
-        role: "salesperson",
+        role: "EMPLOYEE",
         manager_id: appUser.id,
       })
       .eq("id", employeeUserId)

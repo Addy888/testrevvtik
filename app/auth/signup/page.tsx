@@ -175,7 +175,7 @@ import { Label } from "@/components/ui/label"
 
 const roleToPath = (role: string) => {
   if (role === "manager") return "/manager"
-  if (role === "salesperson") return "/personal"
+  if (role === "employee") return "/personal"
   return "/company"
 }
 
@@ -232,7 +232,7 @@ export default function SignUpPage() {
       }
 
       const { data: appUser } = await supabase
-        .from("users")
+        .from("app_users")
         .select("role")
         .eq("id", authUser.id)
         .maybeSingle()

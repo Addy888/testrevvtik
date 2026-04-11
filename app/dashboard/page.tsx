@@ -176,7 +176,7 @@ export default async function DashboardPage() {
     const appUser = await getAppUserFromSupabase(supabase)
     const role = String(appUser.role ?? "admin").toLowerCase()
     if (role === "manager") redirect("/manager")
-    if (role === "salesperson") redirect("/personal")
+    if (role === "employee") redirect("/personal")
     redirect("/company")
   } catch (error: any) {
     console.error("Dashboard redirect failed:", error)

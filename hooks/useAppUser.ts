@@ -28,27 +28,48 @@ export function useAppUser() {
           return
         }
 
+        console.log("Fetching user from app_users table");
         const { data, error: usersError } = await supabase
-          .from('users')
-          .select('id, email, role, company_id')
-          .eq('id', user.id)
+          .from("app_users")
+          .select(`
+            id,
+            name,
+            email,
+            role,
+            company_id,
+            manager_id,
+            company:companies(id, name)
+          `)
+          .eq("email", user.email)
           .maybeSingle()
 
         if (usersError) {
-          console.error('Error fetching user profile:', usersError)
+          console.error("Error fetching user profile:", usersError)
         }
 
         if (!data) {
           setAppUser({
             id: user.id,
             email: user.email ?? null,
-            role: 'admin',
+            name: user.user_metadata?.full_name || user.email?.split("@")[0] || "New User",
+            role: "ADMIN",
             company_id: null,
+            manager_id: null,
+            company_name: null,
+            company_created_at: null,
           })
           setError(null)
           return
         }
-        setAppUser(data as AppUser)
+        
+        const enrichedUser = {
+          ...data,
+          company_name: (data.company as any)?.name || null,
+          company_created_at: null // Standardizing since created_at was removed from join
+        }
+        delete (enrichedUser as any).company
+        
+        setAppUser(enrichedUser as AppUser)
       } catch (e) {
         setAppUser(null)
         setError(e instanceof Error ? e.message : 'Failed to load user')

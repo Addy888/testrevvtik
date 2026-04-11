@@ -9,13 +9,10 @@ export async function POST(req: Request) {
     const supabase = await createClient()
     const appUser = await getAppUserFromSupabase(supabase)
 
-    if (appUser.role !== "admin") {
+    if (appUser.role !== "SUPER_ADMIN" && appUser.role !== "ADMIN") {
       return NextResponse.json({ error: "Only admin can make manager" }, { status: 403 })
     }
 
-    if (String(appUser.company_type ?? "").toLowerCase() === "personal") {
-      return NextResponse.json({ error: "Personal plan does not support manager features" }, { status: 403 })
-    }
 
     const body = await req.json()
     const userId = body?.user_id as string | undefined
@@ -25,7 +22,7 @@ export async function POST(req: Request) {
     }
 
     const { data: targetUser, error: targetError } = await supabase
-      .from("users")
+      .from("app_users")
       .select("id, company_id, role")
       .eq("id", userId)
       .eq("company_id", appUser.company_id)
@@ -36,9 +33,9 @@ export async function POST(req: Request) {
     }
 
     const { error: updateError } = await supabase
-      .from("users")
+      .from("app_users")
       .update({
-        role: "manager",
+        role: "MANAGER",
         manager_id: null,
       })
       .eq("id", userId)

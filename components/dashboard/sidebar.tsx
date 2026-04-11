@@ -303,7 +303,7 @@ export function DashboardSidebar() {
 
   const role = String(appUser?.role ?? "admin").toLowerCase()
   const visibleNavItems =
-    role === "salesperson"
+    role === "employee"
       ? navItems.filter((item) => item.href !== "/dashboard/company" && item.href !== "/dashboard/manager")
       : role === "manager"
         ? navItems.filter((item) => item.href !== "/dashboard/company")

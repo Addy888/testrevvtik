@@ -1,10 +1,16 @@
 import { createClient } from "@/lib/supabase/server"
 
+export type Role = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "EMPLOYEE"
+
 export type AppUser = {
   id: string
+  name: string | null
   email: string | null
-  role: "admin" | "manager" | "salesperson" | string
+  role: Role
   company_id: string | null
+  manager_id: string | null
+  company_name: string | null
+  company_created_at: string | null
 }
 
 type AppUserWithRoleError = Error & { status?: number }
@@ -21,10 +27,20 @@ export async function getAppUserFromSupabase(supabase: any): Promise<AppUser> {
     throw err
   }
 
+  // Fetch user data along with the company's info using a join
+  console.log("Fetching user from app_users table");
   const { data: appUser, error: usersError } = await supabase
-    .from("users")
-    .select("id, email, role, company_id")
-    .eq("id", user.id)
+    .from("app_users")
+    .select(`
+      id, 
+      name, 
+      email, 
+      role, 
+      company_id, 
+      manager_id,
+      company:companies(id, name)
+    `)
+    .eq("email", user.email)
     .maybeSingle()
 
   if (usersError) {
@@ -35,14 +51,47 @@ export async function getAppUserFromSupabase(supabase: any): Promise<AppUser> {
   }
 
   if (!appUser) {
-    return {
+    // If not exists, create default EMPLOYEE entry
+    const newAppUser = {
       id: user.id,
-      email: user.email ?? null,
-      role: "admin",
+      name: user.user_metadata?.full_name || user.email?.split("@")[0] || "New User",
+      email: user.email,
+      role: "EMPLOYEE",
       company_id: null,
+      manager_id: null,
+      company_name: null,
+      company_created_at: null,
     }
+    
+    // Attempt to insert
+    const { error: insertError } = await supabase
+      .from("app_users")
+      .insert({
+        id: newAppUser.id,
+        name: newAppUser.name,
+        email: newAppUser.email,
+        role: newAppUser.role,
+        company_id: newAppUser.company_id,
+        manager_id: newAppUser.manager_id,
+      })
+      
+    if (insertError) {
+      console.error("Error creating default user profile:", insertError);
+    }
+    
+    return newAppUser as AppUser
   }
-  return appUser as AppUser
+  
+  // Map the joined company data
+  const result: AppUser = {
+    ...appUser,
+    company_name: (appUser.company as any)?.name || null,
+    company_created_at: null // Standardizing
+  }
+  
+  delete (result as any).company // Clean up the joined object
+  
+  return result
 }
 
 export async function requireAppUser(): Promise<AppUser> {

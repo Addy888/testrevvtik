@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const cookieStore = await cookies()
   const roleToPath = (role: string) => {
     if (role === "manager") return "/manager"
-    if (role === "salesperson") return "/personal"
+    if (role === "employee") return "/personal"
     return "/company"
   }
   const response = NextResponse.redirect(new URL("/company", request.url))
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
   }
 
   const { data: appUser } = await supabase
-    .from("users")
+    .from("app_users")
     .select("role")
     .eq("id", user.id)
     .maybeSingle()

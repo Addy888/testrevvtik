@@ -33,7 +33,7 @@ export default function RecordingsPage() {
   const applyRoleEq = React.useCallback(
     (query: any) => {
       if (!appUser) return query
-      return appUser.role === "salesperson" ? query.eq("user_id", appUser.id) : query
+      return appUser.role === "EMPLOYEE" ? query.eq("user_id", appUser.id) : query
     },
     [appUser]
   )

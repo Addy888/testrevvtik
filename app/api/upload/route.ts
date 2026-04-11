@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     }
 
     const { data: appUser } = await supabase
-      .from("users")
+      .from("app_users")
       .select("company_id")
       .eq("id", user.id)
       .single()

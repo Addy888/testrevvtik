@@ -119,7 +119,7 @@ import { Eye, EyeOff } from "lucide-react"
 
 const roleToPath = (role: string) => {
   if (role === "manager") return "/manager"
-  if (role === "salesperson") return "/personal"
+  if (role === "employee") return "/personal"
   return "/company"
 }
 
@@ -138,7 +138,7 @@ export default function LoginPage() {
       const { data } = await supabase.auth.getUser()
       if (data.user) {
         const { data: appUser } = await supabase
-          .from("users")
+          .from("app_users")
           .select("role")
           .eq("id", data.user.id)
           .maybeSingle()
@@ -166,7 +166,7 @@ export default function LoginPage() {
       const authUser = data.user
       if (!authUser) throw new Error("Login succeeded but user session not found")
       const { data: appUser } = await supabase
-        .from("users")
+        .from("app_users")
         .select("role")
         .eq("id", authUser.id)
         .maybeSingle()

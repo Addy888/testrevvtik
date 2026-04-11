@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     const role = searchParams.get("role")
 
     const applyRoleEq = (query: any) => {
-      if (role === "salesperson" && userId) {
+      if (role === "EMPLOYEE" && userId) {
         return query.eq("user_id", userId)
       }
       return query

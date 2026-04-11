@@ -37,35 +37,16 @@ export default function CompanyDashboardPage() {
       if (!authUser) throw new Error("Unauthorized")
 
       const { data: profile, error: profileError } = await supabase
-        .from("users")
+        .from("app_users")
         .select("id, role, company_id")
         .eq("id", authUser.id)
         .single()
       if (profileError || !profile) throw new Error("User profile not found")
 
-      // Personal onboarding must never reach company manager features.
-      let companyType: string | null = null
-      try {
-        const { data: company } = await supabase
-          .from("companies")
-          .select("type")
-          .eq("id", profile.company_id)
-          .single()
-        companyType = (company?.type ?? null) as string | null
-      } catch {
-        companyType = null
-      }
-
-      const enrichedProfile = { ...profile, company_type: companyType }
-      setAppUser(enrichedProfile)
-
-      if (String(companyType ?? "").toLowerCase() === "personal") {
-        router.replace("/dashboard/personal")
-        return
-      }
+      setAppUser(profile)
 
       const { data: usersRaw, error: usersError } = await supabase
-        .from("users")
+        .from("app_users")
         .select("id, role, email, manager_id")
         .eq("company_id", profile.company_id)
         .order("role", { ascending: true })
@@ -196,7 +177,7 @@ export default function CompanyDashboardPage() {
                   <TableCell className="capitalize">{u.role}</TableCell>
                   <TableCell>{u.manager_id || "-"}</TableCell>
                   <TableCell>
-                    {appUser?.company_type === "company" && appUser?.role === "admin" && u.role !== "manager" ? (
+                    {(appUser?.role === "admin" || appUser?.role === "ADMIN" || appUser?.role === "SUPER_ADMIN") && u.role !== "manager" && u.role !== "MANAGER" ? (
                       <Button
                         size="sm"
                         variant="outline"

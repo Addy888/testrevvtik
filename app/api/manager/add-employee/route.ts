@@ -9,13 +9,10 @@ export async function POST(req: Request) {
     const supabase = await createClient()
     const appUser = await getAppUserFromSupabase(supabase)
 
-    if (appUser.role !== "manager" && appUser.role !== "admin") {
+    if (appUser.role !== "MANAGER" && appUser.role !== "SUPER_ADMIN" && appUser.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    if (String(appUser.company_type ?? "").toLowerCase() === "personal") {
-      return NextResponse.json({ error: "Personal plan does not support manager features" }, { status: 403 })
-    }
 
     const body = await req.json()
     const email = String(body?.email || "").trim().toLowerCase()
@@ -41,7 +38,7 @@ export async function POST(req: Request) {
     }
 
     const { data: existingUser, error: existingError } = await supabase
-      .from("users")
+      .from("app_users")
       .select("id, email, company_id, role")
       .eq("email", email)
       .eq("company_id", appUser.company_id)
@@ -56,10 +53,10 @@ export async function POST(req: Request) {
 
     if (existingUser) {
       const { error: updateError } = await supabase
-        .from("users")
+        .from("app_users")
         .update({
           manager_id: appUser.id,
-          role: existingUser.role === "manager" ? "salesperson" : existingUser.role || "salesperson",
+          role: existingUser.role === "MANAGER" || existingUser.role === "manager" ? "EMPLOYEE" : existingUser.role || "EMPLOYEE",
         })
         .eq("id", existingUser.id)
         .eq("company_id", appUser.company_id)
@@ -79,11 +76,11 @@ export async function POST(req: Request) {
     }
 
     const { error: insertError } = await supabase
-      .from("users")
+      .from("app_users")
       .insert({
         email,
         company_id: appUser.company_id,
-        role: "salesperson",
+        role: "EMPLOYEE",
         manager_id: appUser.id,
       })
 
